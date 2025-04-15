@@ -9,6 +9,7 @@
 #pragma once
 
 #include "AdaptiveUtils.h"
+#include "utils/CryptoUtils.h"
 
 #ifdef INPUTSTREAM_TEST_BUILD
 #include "test/KodiStubs.h"
@@ -18,6 +19,7 @@
 
 #include <algorithm>
 #include <deque>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -40,7 +42,6 @@ public:
 
   uint64_t startPTS_ = NO_PTS_VALUE; // The start PTS, in timescale units
   uint64_t m_endPts = NO_PTS_VALUE; // The end PTS, in timescale units
-  uint16_t pssh_set_ = PSSHSET_POS_DEFAULT;
 
   uint64_t m_time{0}; // Timestamp
   uint64_t m_number{SEGMENT_NO_NUMBER};
@@ -58,8 +59,12 @@ public:
    */
   bool HasByteRange() const { return range_begin_ != NO_VALUE || range_end_ != NO_VALUE; }
 
+  std::optional<CAesKeyInfo>& AESKeyInfo() { return m_aesKey; }
+  const std::optional<CAesKeyInfo>& AESKeyInfo() const { return m_aesKey; }
+
 private:
   bool m_isInitialization{false};
+  std::optional<CAesKeyInfo> m_aesKey;
 };
 
 class ATTR_DLL_LOCAL CSegContainer
@@ -155,6 +160,8 @@ public:
 
   std::deque<CSegment>::const_iterator begin() const { return m_segments.begin(); }
   std::deque<CSegment>::const_iterator end() const { return m_segments.end(); }
+  std::deque<CSegment>::const_reverse_iterator rbegin() const { return m_segments.rbegin(); }
+  std::deque<CSegment>::const_reverse_iterator rend() const { return m_segments.rend(); }
 
 private:
   // Has been used std::deque because there are uses of pointer references

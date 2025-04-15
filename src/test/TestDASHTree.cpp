@@ -23,6 +23,7 @@ class DASHTreeTest : public ::testing::Test
 protected:
   void SetUp() override
   {
+    CSrvBroker::GetInstance()->Initialize();
     m_reprChooser = new CTestRepresentationChooserDefault();
     tree = new DASHTestTree();
   }
@@ -53,7 +54,7 @@ protected:
   {
     testHelper::testFile = filePath;
 
-    CSrvBroker::GetInstance()->Init(m_kodiProps);
+    CSrvBroker::GetInstance()->InitStage1(m_kodiProps);
 
     // Download the manifest
     UTILS::CURL::HTTPResponse resp;
@@ -68,8 +69,7 @@ protected:
     // We set the download speed to calculate the initial network bandwidth
     m_reprChooser->SetDownloadSpeed(500000);
 
-    tree->Configure(m_reprChooser, std::vector<std::string_view>{DRM::URN_WIDEVINE},
-                    manifestUpdParams);
+    tree->Configure(m_reprChooser, manifestUpdParams);
 
     // Parse the manifest
     if (!tree->Open(resp.effectiveUrl, resp.headers, resp.data))
@@ -393,14 +393,58 @@ TEST_F(DASHTreeTest, CalculatePsshDefaultKid)
 {
   OpenTestFile("mpd/pssh_default_kid.mpd");
 
+  const std::string kid1 = "0101f49e117cec8ed60627d7cb46ae38";
   const std::vector<uint8_t> pssh1 = BASE64::Decode("AAAANHBzc2gAAAAA7e+LqXnWSs6jyCfc1R0h7QAAABQIARIQblodJidXR9eARuql0dNLWg==");
-  EXPECT_EQ(tree->m_periods[0]->GetPSSHSets()[1].pssh_, pssh1);
+  auto& adp1repr1 = tree->m_periods[0]->GetAdaptationSets()[0]->GetRepresentations()[0];
+  
+  EXPECT_EQ(adp1repr1->DrmInfos().size(), 1);
   // The following KID on manifest is represented as UUID and dashes must be deleted (string size 36 to 32)
-  EXPECT_EQ(tree->m_periods[0]->GetPSSHSets()[1].defaultKID_.size(), 32);
+  EXPECT_EQ(adp1repr1->DrmInfos()[0].defaultKid.size(), 32);
+  EXPECT_EQ(adp1repr1->DrmInfos()[0].defaultKid, kid1);
+  EXPECT_EQ(adp1repr1->DrmInfos()[0].initData, pssh1);
 
+  const std::string kid2 = "01004b6f0835b8079098c070dc30a6c7";
   const std::vector<uint8_t> pssh2 = BASE64::Decode("AAAANHBzc2gAAAAA7e+LqXnWSs6jyCfc1R0h7QAAABQIARIQnrQFDeRLSAKTLifXUIPiZg==");
-  EXPECT_EQ(tree->m_periods[0]->GetPSSHSets()[2].pssh_, pssh2);
-  EXPECT_EQ(tree->m_periods[0]->GetPSSHSets()[2].defaultKID_.size(), 32);
+  auto& adp2repr1 = tree->m_periods[0]->GetAdaptationSets()[1]->GetRepresentations()[0];
+
+  EXPECT_EQ(adp2repr1->DrmInfos().size(), 1);
+  EXPECT_EQ(adp2repr1->DrmInfos()[0].defaultKid.size(), 32);
+  EXPECT_EQ(adp2repr1->DrmInfos()[0].defaultKid, kid2);
+  EXPECT_EQ(adp2repr1->DrmInfos()[0].initData, pssh2);
+}
+
+TEST_F(DASHTreeTest, PsshNoCenc)
+{
+  OpenTestFile("mpd/adaptation_set_merge.mpd");
+
+  // This manifest provides on ContentProtection the PSSH data without using the CENC PSSH format,
+  // on parsing the PSSH is expected to be converted to the CENC standard
+
+  const std::string kidCommon = "16b2ee1ac691450ea19c84e40f8e6221";
+  const std::vector<uint8_t> psshWidevine = BASE64::Decode("AAAAeXBzc2gAAAAA7e+LqXnWSs6jyCfc1R0h7QAAAFkIARIQFrLuGsaRRQ6hnITkD45iIRoGYW1hem9uIjVjaWQ6RnJMdUdzYVJSUTZobklUa0Q0NWlJUT09LDgwdVhRbEhiVENTenI1K25RcU5MclE9PSoCU0QyAA==");
+  const std::vector<uint8_t> psshPlayready = BASE64::Decode("AAACjHBzc2gAAAAAmgTweZhAQoarkuZb4IhflQAAAmxsAgAAAQABAGICPABXAFIATQBIAEUAQQBEAEUAUgAgAHgAbQBsAG4AcwA9ACIAaAB0AHQAcAA6AC8ALwBzAGMAaABlAG0AYQBzAC4AbQBpAGMAcgBvAHMAbwBmAHQALgBjAG8AbQAvAEQAUgBNAC8AMgAwADAANwAvADAAMwAvAFAAbABhAHkAUgBlAGEAZAB5AEgAZQBhAGQAZQByACIAIAB2AGUAcgBzAGkAbwBuAD0AIgA0AC4AMAAuADAALgAwACIAPgA8AEQAQQBUAEEAPgA8AFAAUgBPAFQARQBDAFQASQBOAEYATwA+ADwASwBFAFkATABFAE4APgAxADYAPAAvAEsARQBZAEwARQBOAD4APABBAEwARwBJAEQAPgBBAEUAUwBDAFQAUgA8AC8AQQBMAEcASQBEAD4APAAvAFAAUgBPAFQARQBDAFQASQBOAEYATwA+ADwASwBJAEQAPgBHAHUANgB5AEYAcABIAEcARABrAFcAaABuAEkAVABrAEQANAA1AGkASQBRAD0APQA8AC8ASwBJAEQAPgA8AEMASABFAEMASwBTAFUATQA+AFAAUwBFAFEAcQA1ADAASgAzAHcAZwA9ADwALwBDAEgARQBDAEsAUwBVAE0APgA8AEwAQQBfAFUAUgBMAD4AaAB0AHQAcABzADoALwAvAHAAcgBsAHMALgBhAHQAdgAtAHAAcwAuAGEAbQBhAHoAbwBuAC4AYwBvAG0ALwBjAGQAcAA8AC8ATABBAF8AVQBSAEwAPgA8AC8ARABBAFQAQQA+ADwALwBXAFIATQBIAEUAQQBEAEUAUgA+AA==");
+  auto& adp1repr1 = tree->m_periods[0]->GetAdaptationSets()[0]->GetRepresentations()[0];
+
+  EXPECT_EQ(adp1repr1->DrmInfos().size(), 2);
+  for (auto& drmInfo : adp1repr1->DrmInfos())
+  {
+    if (drmInfo.keySystem == DRM::KS_WIDEVINE)
+    {
+      EXPECT_EQ(drmInfo.defaultKid.size(), 32);
+      EXPECT_EQ(drmInfo.defaultKid, kidCommon);
+      EXPECT_EQ(drmInfo.initData, psshWidevine);
+    }
+    else if (drmInfo.keySystem == DRM::KS_PLAYREADY)
+    {
+      EXPECT_EQ(drmInfo.defaultKid.size(), 32);
+      EXPECT_EQ(drmInfo.defaultKid, kidCommon);
+      EXPECT_EQ(drmInfo.initData, psshPlayready);
+    }
+    else
+    {
+      FAIL() << "Error unexpected Key System";
+    }
+  }
 }
 
 TEST_F(DASHTreeAdaptiveStreamTest, subtitles)
@@ -460,7 +504,7 @@ TEST_F(DASHTreeAdaptiveStreamTest, subtitles)
   EXPECT_EQ(adpSets[10]->GetRepresentations()[0]->GetContainerType(), PLAYLIST::ContainerType::TEXT);
 
   EXPECT_EQ(adpSets[11]->GetStreamType(), PLAYLIST::StreamType::SUBTITLE);
-  EXPECT_EQ(STR(adpSets[11]->GetRepresentations()[0]->GetMimeType()), "application/mp4");
+  EXPECT_EQ(adpSets[11]->GetRepresentations()[0]->GetMimeType(), "application/mp4");
   EXPECT_EQ(CODEC::Contains(adpSets[11]->GetRepresentations()[0]->GetCodecs(), CODEC::FOURCC_STPP), true);
   EXPECT_EQ(adpSets[11]->GetRepresentations()[0]->GetContainerType(), PLAYLIST::ContainerType::MP4);
 
@@ -471,7 +515,7 @@ TEST_F(DASHTreeAdaptiveStreamTest, subtitles)
   EXPECT_EQ(testHelper::downloadList[4], "https://foo.bar/11/0004.m4s");
 
   EXPECT_EQ(adpSets[12]->GetStreamType(), PLAYLIST::StreamType::SUBTITLE);
-  EXPECT_EQ(STR(adpSets[12]->GetMimeType()), "application/mp4");
+  EXPECT_EQ(adpSets[12]->GetMimeType(), "application/mp4");
   EXPECT_EQ(CODEC::Contains(adpSets[12]->GetRepresentations()[0]->GetCodecs(), "stpp.ttml.im1t"), true);
   EXPECT_EQ(adpSets[12]->GetRepresentations()[0]->GetContainerType(), PLAYLIST::ContainerType::MP4);
 
@@ -490,23 +534,23 @@ TEST_F(DASHTreeTest, CalculateMultipleSegTpl)
 
   auto& adpSets = tree->m_periods[0]->GetAdaptationSets();
 
-  EXPECT_EQ(STR(adpSets[0]->GetRepresentations()[0]->GetSegmentTemplate()->GetInitialization()), "3c1055cb-a842-4449-b393-7f31693b4a8f_1_448x252init.mp4");
-  EXPECT_EQ(STR(adpSets[0]->GetRepresentations()[0]->GetSegmentTemplate()->GetMedia()), "3c1055cb-a842-4449-b393-7f31693b4a8f_1_448x252_$Number%09d$.mp4");
+  EXPECT_EQ(adpSets[0]->GetRepresentations()[0]->GetSegmentTemplate()->GetInitialization(), "3c1055cb-a842-4449-b393-7f31693b4a8f_1_448x252init.mp4");
+  EXPECT_EQ(adpSets[0]->GetRepresentations()[0]->GetSegmentTemplate()->GetMedia(), "3c1055cb-a842-4449-b393-7f31693b4a8f_1_448x252_$Number%09d$.mp4");
   EXPECT_EQ(adpSets[0]->GetRepresentations()[0]->GetSegmentTemplate()->GetTimescale(), 120000);
   EXPECT_EQ(adpSets[0]->GetRepresentations()[0]->Timeline().Get(0)->m_number, 3);
 
-  EXPECT_EQ(STR(adpSets[0]->GetRepresentations()[1]->GetSegmentTemplate()->GetInitialization()), "3c1055cb-a842-4449-b393-7f31693b4a8f_2_1920x1080init.mp4");
-  EXPECT_EQ(STR(adpSets[0]->GetRepresentations()[1]->GetSegmentTemplate()->GetMedia()), "3c1055cb-a842-4449-b393-7f31693b4a8f_2_1920x1080_$Number%09d$.mp4");
+  EXPECT_EQ(adpSets[0]->GetRepresentations()[1]->GetSegmentTemplate()->GetInitialization(), "3c1055cb-a842-4449-b393-7f31693b4a8f_2_1920x1080init.mp4");
+  EXPECT_EQ(adpSets[0]->GetRepresentations()[1]->GetSegmentTemplate()->GetMedia(), "3c1055cb-a842-4449-b393-7f31693b4a8f_2_1920x1080_$Number%09d$.mp4");
   EXPECT_EQ(adpSets[0]->GetRepresentations()[1]->GetSegmentTemplate()->GetTimescale(), 90000);
   EXPECT_EQ(adpSets[0]->GetRepresentations()[1]->Timeline().Get(0)->m_number, 5);
 
-  EXPECT_EQ(STR(adpSets[1]->GetRepresentations()[0]->GetSegmentTemplate()->GetInitialization()), "3c1055cb-a842-4449-b393-7f31693b4a8f_aac1init.mp4");
-  EXPECT_EQ(STR(adpSets[1]->GetRepresentations()[0]->GetSegmentTemplate()->GetMedia()), "3c1055cb-a842-4449-b393-7f31693b4a8f_aac1_$Number%09d$.mp4");
+  EXPECT_EQ(adpSets[1]->GetRepresentations()[0]->GetSegmentTemplate()->GetInitialization(), "3c1055cb-a842-4449-b393-7f31693b4a8f_aac1init.mp4");
+  EXPECT_EQ(adpSets[1]->GetRepresentations()[0]->GetSegmentTemplate()->GetMedia(), "3c1055cb-a842-4449-b393-7f31693b4a8f_aac1_$Number%09d$.mp4");
   EXPECT_EQ(adpSets[1]->GetRepresentations()[0]->GetSegmentTemplate()->GetTimescale(), 48000);
   EXPECT_EQ(adpSets[1]->GetRepresentations()[0]->Timeline().Get(0)->m_number, 1);
 
-  EXPECT_EQ(STR(adpSets[2]->GetRepresentations()[0]->GetSegmentTemplate()->GetInitialization()), "abc_aac1init.mp4");
-  EXPECT_EQ(STR(adpSets[2]->GetRepresentations()[0]->GetSegmentTemplate()->GetMedia()), "abc2_$Number%09d$.mp4");
+  EXPECT_EQ(adpSets[2]->GetRepresentations()[0]->GetSegmentTemplate()->GetInitialization(), "abc_aac1init.mp4");
+  EXPECT_EQ(adpSets[2]->GetRepresentations()[0]->GetSegmentTemplate()->GetMedia(), "abc2_$Number%09d$.mp4");
   EXPECT_EQ(adpSets[2]->GetRepresentations()[0]->GetSegmentTemplate()->GetTimescale(), 68000);
   EXPECT_EQ(adpSets[2]->GetRepresentations()[0]->Timeline().Get(0)->m_number, 5);
 }
@@ -627,22 +671,22 @@ TEST_F(DASHTreeTest, AdaptionSetSwitching)
   auto& adpSets = tree->m_periods[0]->GetAdaptationSets();
 
   EXPECT_EQ(adpSets.size(), 6);
-  EXPECT_EQ(STR(adpSets[0]->GetRepresentations()[0]->GetId()), "3");
-  EXPECT_EQ(STR(adpSets[0]->GetRepresentations()[1]->GetId()), "1");
-  EXPECT_EQ(STR(adpSets[0]->GetRepresentations()[2]->GetId()), "2");
+  EXPECT_EQ(adpSets[0]->GetRepresentations()[0]->GetId(), "3");
+  EXPECT_EQ(adpSets[0]->GetRepresentations()[1]->GetId(), "1");
+  EXPECT_EQ(adpSets[0]->GetRepresentations()[2]->GetId(), "2");
   // Below adaptation set (id 6) should be merged with previous one
   // but since has a different codec will not be merged
   // see note on related DASH parser code
-  EXPECT_EQ(STR(adpSets[1]->GetRepresentations()[0]->GetId()), "4");
+  EXPECT_EQ(adpSets[1]->GetRepresentations()[0]->GetId(), "4");
 
-  EXPECT_EQ(STR(adpSets[2]->GetRepresentations()[0]->GetId()), "5");
-  EXPECT_EQ(STR(adpSets[2]->GetRepresentations()[1]->GetId()), "6");
+  EXPECT_EQ(adpSets[2]->GetRepresentations()[0]->GetId(), "5");
+  EXPECT_EQ(adpSets[2]->GetRepresentations()[1]->GetId(), "6");
 
-  EXPECT_EQ(STR(adpSets[3]->GetRepresentations()[0]->GetId()), "7");
+  EXPECT_EQ(adpSets[3]->GetRepresentations()[0]->GetId(), "7");
 
-  EXPECT_EQ(STR(adpSets[4]->GetRepresentations()[0]->GetId()), "8");
+  EXPECT_EQ(adpSets[4]->GetRepresentations()[0]->GetId(), "8");
 
-  EXPECT_EQ(STR(adpSets[5]->GetRepresentations()[0]->GetId()), "9");
+  EXPECT_EQ(adpSets[5]->GetRepresentations()[0]->GetId(), "9");
 }
 
 TEST_F(DASHTreeTest, AdaptionSetMerge)
@@ -652,14 +696,14 @@ TEST_F(DASHTreeTest, AdaptionSetMerge)
   auto& adpSets = tree->m_periods[0]->GetAdaptationSets();
 
   EXPECT_EQ(adpSets.size(), 6);
-  EXPECT_EQ(STR(adpSets[0]->GetRepresentations()[0]->GetId()), "video=100000");
-  EXPECT_EQ(STR(adpSets[1]->GetRepresentations()[0]->GetId()), "audio_ja-JP_3=128000");
-  EXPECT_EQ(STR(adpSets[2]->GetRepresentations()[0]->GetId()), "audio_es-419_3=128000");
-  EXPECT_EQ(STR(adpSets[3]->GetRepresentations()[0]->GetId()), "audio_en-GB_3=96000");
-  EXPECT_EQ(STR(adpSets[4]->GetRepresentations()[0]->GetId()), "audio_es-ES=20000");
+  EXPECT_EQ(adpSets[0]->GetRepresentations()[0]->GetId(), "video=100000");
+  EXPECT_EQ(adpSets[1]->GetRepresentations()[0]->GetId(), "audio_ja-JP_3=128000");
+  EXPECT_EQ(adpSets[2]->GetRepresentations()[0]->GetId(), "audio_es-419_3=128000");
+  EXPECT_EQ(adpSets[3]->GetRepresentations()[0]->GetId(), "audio_en-GB_3=96000");
+  EXPECT_EQ(adpSets[4]->GetRepresentations()[0]->GetId(), "audio_es-ES=20000");
   // Below two adaptation sets merged
-  EXPECT_EQ(STR(adpSets[5]->GetRepresentations()[0]->GetId()), "audio_es-ES_1=64000");
-  EXPECT_EQ(STR(adpSets[5]->GetRepresentations()[1]->GetId()), "audio_es-ES_1=64000"); 
+  EXPECT_EQ(adpSets[5]->GetRepresentations()[0]->GetId(), "audio_es-ES_1=64000");
+  EXPECT_EQ(adpSets[5]->GetRepresentations()[1]->GetId(), "audio_es-ES_1=64000"); 
 }
 
 TEST_F(DASHTreeTest, SuggestedPresentationDelay)

@@ -35,9 +35,9 @@ void WriteBigEndianInt(std::vector<uint8_t>& data, const uint32_t value)
 
 } // unnamed namespace
 
-std::string DRM::GenerateUrlDomainHash(std::string_view url)
+std::string DRM::GenerateUrlDomainHash(const std::string& url)
 {
-  std::string baseDomain = URL::GetBaseDomain(url.data());
+  std::string baseDomain = URL::GetBaseDomain(url);
   // If we are behind a proxy we fall always in to the same domain e.g. "http://localhost/"
   // but we have to differentiate the results based on the service of the add-on hosting the proxy
   // to avoid possible collisions, so we include the first directory path after the domain name
@@ -92,6 +92,20 @@ std::vector<std::string> DRM::UrnsToSystemIds(const std::vector<std::string_view
   }
 
   return sids;
+}
+
+std::string_view DRM::UrnToKeySystem(std::string_view urn)
+{
+  if (urn == URN_WIDEVINE)
+    return KS_WIDEVINE;
+  else if (urn == URN_PLAYREADY)
+    return KS_PLAYREADY;
+  else if (urn == URN_WISEPLAY)
+    return KS_WISEPLAY;
+  else if (urn == URN_CLEARKEY || urn == URN_COMMON)
+    return KS_CLEARKEY;
+  else
+    return "";
 }
 
 std::string DRM::KeySystemToDrmName(std::string_view ks)

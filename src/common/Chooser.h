@@ -19,8 +19,9 @@
 // forwards
 namespace PLAYLIST
 {
-class CRepresentation;
+class CPeriod;
 class CAdaptationSet;
+class CRepresentation;
 }
 
 namespace ADP::KODI_PROPS
@@ -97,6 +98,19 @@ public:
   }
 
   /*!
+   * \brief Get the preferred adaptation set from a period
+   *        (a representation may be preselected internally the Chooser)
+   * \param period The period where choose the adaptation set / representation
+   * \param adpSetPreferred The preferred adaptation set
+   * \return The adaptation set or nullptr, the behaviour depend on Chooser implementation
+   */
+  virtual PLAYLIST::CAdaptationSet* GetPreferredVideoAdpSet(
+      PLAYLIST::CPeriod* period, PLAYLIST::CAdaptationSet* adpSetPreferred)
+  {
+    return adpSetPreferred;
+  }
+
+  /*!
    * \brief Get the next representation from an adaptation set
    * \param adp The adaptation set where choose the representation
    * \param currentRep The current representation,
@@ -107,12 +121,17 @@ public:
       PLAYLIST::CAdaptationSet* adp,
       PLAYLIST::CRepresentation* currentRep) = 0;
 
+  /*!
+   * \brief Prints details of the specified representation in the log
+   */
+  void LogDetails(const PLAYLIST::CRepresentation* rep);
+
 protected:
   /*!
    * \brief Prints details of the selected or changed representation in the log
    */
-  void LogDetails(PLAYLIST::CRepresentation* currentRep,
-                  PLAYLIST::CRepresentation* nextRep);
+  void LogDetails(const PLAYLIST::CRepresentation* currentRep,
+                  const PLAYLIST::CRepresentation* nextRep);
 
   bool m_isSecureSession{false};
 

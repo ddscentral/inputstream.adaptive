@@ -21,16 +21,16 @@ namespace STRING
 {
 
 // \brief Template function to check if a key exists in a container e.g. <map>
-template<typename T, typename Key>
-bool KeyExists(const T& container, const Key& key)
+template<typename T>
+bool KeyExists(const T& container, const typename T::key_type& key)
 {
   return container.find(key) != std::end(container);
 }
 
 template<typename T>
-bool KeyExists(const T& container, const std::string_view key)
+bool KeyExists(const T& container, std::string_view key)
 {
-  return container.find(key.data()) != std::end(container);
+  return container.find(typename T::key_type(key)) != std::end(container);
 }
 
 /*!
@@ -60,9 +60,9 @@ bool GetMapValue(const std::map<T, TValue>& map, const T& key, TValue& val)
  * \return True if found, otherwise false.
  */
 template<typename T, typename TValue>
-bool GetMapValue(const std::map<T, TValue>& map, const std::string_view& key, TValue& val)
+bool GetMapValue(const std::map<T, TValue>& map, std::string_view key, TValue& val)
 {
-  auto mapIt = map.find(key.data());
+  auto mapIt = map.find(T(key));
   if (mapIt != map.cend())
   {
     val = mapIt->second;
@@ -289,6 +289,24 @@ std::string Trim(std::string value);
  * \return The string on its byte representation
  */
 std::vector<uint8_t> HexToBytes(const std::string& hex);
+
+/*!
+ * \brief Finds and concatenates all the numbers contained in the string
+ * \param str The string to be parsed
+ * \return The concatenated numbers
+ */
+int GetNumbers(std::string_view str);
+
+/*!
+ * \brief Extract placeholders from a string
+ * \param text The string to be parsed
+ * \param openChar The opening char used to enclose the placeholder
+ * \param closeChar The closing char used to enclose the placeholder
+ * \return The placeholders
+ */
+std::vector<std::string> ExtractPlaceholders(const std::string& text,
+                                             const char openChar,
+                                             const char closeChar);
 
 } // namespace STRING
 } // namespace UTILS

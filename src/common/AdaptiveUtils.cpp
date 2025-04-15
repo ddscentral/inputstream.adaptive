@@ -27,7 +27,7 @@
 
 using namespace UTILS;
 
-std::string_view PLAYLIST::StreamTypeToString(const StreamType streamType)
+std::string PLAYLIST::StreamTypeToString(const StreamType streamType)
 {
   switch (streamType)
   {
@@ -44,12 +44,12 @@ std::string_view PLAYLIST::StreamTypeToString(const StreamType streamType)
   }
 }
 
-bool PLAYLIST::ParseRangeRFC(std::string_view range, uint64_t& start, uint64_t& end)
+bool PLAYLIST::ParseRangeRFC(const std::string& range, uint64_t& start, uint64_t& end)
 {
   //! @todo: must be reworked as https://httpwg.org/specs/rfc7233.html
   uint64_t startVal{0};
   uint64_t endVal{0};
-  if (std::sscanf(range.data(), "%" SCNu64 "-%" SCNu64, &startVal, &endVal) > 0)
+  if (std::sscanf(range.c_str(), "%" SCNu64 "-%" SCNu64, &startVal, &endVal) > 0)
   {
     start = startVal;
     end = endVal;
@@ -58,7 +58,7 @@ bool PLAYLIST::ParseRangeRFC(std::string_view range, uint64_t& start, uint64_t& 
   return false;
 }
 
-bool PLAYLIST::ParseRangeValues(std::string_view range,
+bool PLAYLIST::ParseRangeValues(const std::string& range,
                                 uint64_t& first,
                                 uint64_t& second,
                                 char separator /* = '@' */)
@@ -67,7 +67,7 @@ bool PLAYLIST::ParseRangeValues(std::string_view range,
   pattern.push_back(separator);
   pattern.append("%llu");
 
-  if (std::sscanf(range.data(), pattern.c_str(), &first, &second) > 0)
+  if (std::sscanf(range.c_str(), pattern.c_str(), &first, &second) > 0)
     return true;
 
   return false;
@@ -132,20 +132,19 @@ AP4_Movie* PLAYLIST::CreateMovieAtom(adaptive::AdaptiveStream& adStream,
     // will use a generic CodecHandler instead of AudioCodecHandler, because will be not able do determine the codec
     LOG::LogF(LOGDEBUG,
               "Created sample description atom of unknown type for codec \"%s\" because unhandled",
-              codecName.data());
+              codecName.c_str());
     sampleDesc = new AP4_SampleDescription(AP4_SampleDescription::TYPE_UNKNOWN, 0, 0);
   }
 
-  if (repr->GetPsshSetPos() != PSSHSET_POS_DEFAULT)
+  if (!repr->DrmInfos().empty())
   {
-    const PLAYLIST::CPeriod::PSSHSet& psshSet =
-        adStream.getPeriod()->GetPSSHSets()[repr->GetPsshSetPos()];
+    DRM::DRMInfo& drmInfo = repr->DrmInfos()[0];
 
     std::vector<uint8_t> defaultKid;
-    if (psshSet.defaultKID_.empty())
+    if (drmInfo.defaultKid.empty())
       defaultKid.assign(DEFAULT_KEYID, DEFAULT_KEYID + 16);
     else
-      defaultKid = DRM::ConvertKidStrToBytes(psshSet.defaultKID_);
+      defaultKid = DRM::ConvertKidStrToBytes(drmInfo.defaultKid);
 
     AP4_ContainerAtom schi{AP4_ATOM_TYPE_SCHI};
     // Note TENC default_isProtected parameter is intentionally set to 0 (not encrypted)

@@ -79,14 +79,6 @@ menu_data = {
                     'manifest_url': 'https://media.axprod.net/TestVectors/v7-Clear/Manifest_1080p.mpd',
                 }
             },
-            'TravelXP [video]': {
-                SI_FEATURE: 'ADP,CMP4,CWEBM',
-                SI_CODECS: 'vp9,hvc1,mp4a',
-                SI_INFO: 'Two adaptive videos VP9 and HEVC',
-                SI_CONFIG: {
-                    'manifest_url': 'https://travelxp.s.llnwi.net/watch1/61025c11781ce3c543f5abcd/manifest_v4.mpd'
-                }
-            },
             'Dashif testpic_2s [subtitles]': {
                 SI_FEATURE: 'SUBMP4',
                 SI_CODECS: 'avc1,mp4a,stpp',
@@ -361,7 +353,7 @@ menu_data = {
                     'drm': '{"org.w3.clearkey": {"license": {"keyids": {"feedf00deedeadbeeff0baadf00dd00d": "00112233445566778899aabbccddeeff", "1234f00deedeadbeeff0baadf00dd00d": "8899aabbccddeeff8899aabbccddeeff"}}}}',
                 }
             },
-            'Bitmovin art of motion [widevine to clear key, keys on property]': {
+            'Bitmovin art of motion [WV to CK, keys on property]': {
                 SI_ENCRYPT: 'DRMCK',
                 SI_INFO: 'Override widevine content protection to use clear key',
                 SI_CONFIG: {
@@ -499,6 +491,14 @@ menu_data = {
                     'manifest_url': 'https://test-streams.mux.dev/tos_ismc/main.m3u8',
                 }
             },
+            'TravelXP [multi-period][CC subtitles]': {
+                SI_FEATURE: 'ADPV,AUDI',
+                SI_CODECS: 'h264,aac',
+                SI_INFO: 'TS container',
+                SI_CONFIG: {
+                    'manifest_url': 'https://travelxp-travelxp-1-eu.xiaomi.wurl.tv/playlist.m3u8'
+                }
+            },
         },
         'HLS VOD with DRM': {
             MI_CONFIG: {},
@@ -585,6 +585,15 @@ menu_data = {
                     'license_key': 'https://test.playready.microsoft.com/service/rightsmanager.asmx?cfg=(persist:false,sl:150)',
                     'drm_legacy': 'com.microsoft.playready|https://test.playready.microsoft.com/service/rightsmanager.asmx?cfg=(persist:false,sl:150)',
                     'drm': '{"com.microsoft.playready": {"license": {"server_url": "https://test.playready.microsoft.com/service/rightsmanager.asmx?cfg=(persist:false,sl:150)"}}}'
+                }
+            },
+            'Microsoft tears of steel 4k [PR to CK, keys on property]': {
+                SI_ENCRYPT: 'DRMCK',
+                SI_INFO: 'Override PlayReady content protection to use ClearKey',
+                SI_CONFIG: {
+                    'manifest_url': 'https://test.playready.microsoft.com/media/profficialsite/tearsofsteel_4k.ism.smoothstreaming/manifest',
+                    'drm_legacy': 'org.w3.clearkey|6f651ae1dbe44434bcb4690d1564c41c:88da852ae4fa2e1e36aeb2d5c94997b1',
+                    'drm': '{"org.w3.clearkey": {"license": {"keyids": {"6f651ae1dbe44434bcb4690d1564c41c": "88da852ae4fa2e1e36aeb2d5c94997b1"}}}}',
                 }
             },
         },

@@ -18,11 +18,6 @@
 using namespace ADP::SETTINGS;
 using namespace UTILS;
 
-bool ADP::SETTINGS::CCompSettings::IsHdcpOverride() const
-{
-  return kodi::addon::GetSettingBoolean("HDCPOVERRIDE");
-}
-
 StreamSelMode ADP::SETTINGS::CCompSettings::GetStreamSelMode() const
 {
   const std::string mode = kodi::addon::GetSettingString("adaptivestream.streamselection.mode");
@@ -56,6 +51,16 @@ std::pair<int, int> ADP::SETTINGS::CCompSettings::GetResSecureMax() const
   if (!STRING::GetMapValue(RES_CONV_LIST,
                            kodi::addon::GetSettingString("adaptivestream.res.secure.max"), val))
     LOG::Log(LOGERROR, "Unknown value for \"adaptivestream.res.secure.max\" setting");
+
+  return val;
+}
+
+std::pair<int, int> ADP::SETTINGS::CCompSettings::GetResRangeLimit() const
+{
+  std::pair<int, int> val;
+  if (!STRING::GetMapValue(RES_CONV_LIST,
+                           kodi::addon::GetSettingString("adaptivestream.res.rangelimit"), val))
+    LOG::Log(LOGERROR, "Unknown value for \"adaptivestream.res.rangelimit\" setting");
 
   return val;
 }

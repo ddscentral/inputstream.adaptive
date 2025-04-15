@@ -35,12 +35,11 @@ public:
   CDashTree(const CDashTree& left);
 
   void Configure(CHOOSER::IRepresentationChooser* reprChooser,
-                 std::vector<std::string_view> supportedKeySystems,
-                 std::string_view manifestUpdParams) override;
+                 const std::string& manifestUpdParams) override;
 
   virtual TreeType GetTreeType() const override { return TreeType::DASH; }
 
-  virtual bool Open(std::string_view url,
+  virtual bool Open(const std::string& url,
                     const std::map<std::string, std::string>& headers,
                     const std::string& data) override;
 
@@ -61,7 +60,7 @@ protected:
   virtual bool ParseManifest(const std::string& data);
 
   void ParseTagMPDAttribs(pugi::xml_node NodeMPD);
-  void ParseTagPeriod(pugi::xml_node nodePeriod, std::string_view mpdUrl);
+  void ParseTagPeriod(pugi::xml_node nodePeriod, const std::string& mpdUrl);
   void ParseTagAdaptationSet(pugi::xml_node nodeAdp, PLAYLIST::CPeriod* period);
   void ParseTagRepresentation(pugi::xml_node nodeRepr,
                               PLAYLIST::CAdaptationSet* adpSet,
@@ -84,11 +83,9 @@ protected:
    * \param licenseUrl[OUT] The license url (if any)
    * \return True if a protection has been found, otherwise false
    */
-  bool GetProtectionData(const std::vector<PLAYLIST::ProtectionScheme>& adpProtSchemes,
-                         const std::vector<PLAYLIST::ProtectionScheme>& reprProtSchemes,
-                         std::vector<uint8_t>& pssh,
-                         std::string& kid,
-                         std::string& licenseUrl);
+  void GetProtectionData(const std::vector<PLAYLIST::ProtectionScheme>& adpProtSchemes,
+                         std::vector<PLAYLIST::ProtectionScheme>& reprProtSchemes,
+                         PLAYLIST::CRepresentation& repr);
 
   std::optional<bool> ParseTagContentProtectionSecDec(pugi::xml_node nodeParent);
 
@@ -99,7 +96,7 @@ protected:
   /*!
    * \brief Download manifest update, overridable method for test project
    */
-  virtual bool DownloadManifestUpd(std::string_view url,
+  virtual bool DownloadManifestUpd(const std::string& url,
                                    const std::map<std::string, std::string>& reqHeaders,
                                    const std::vector<std::string>& respHeaders,
                                    UTILS::CURL::HTTPResponse& resp);
@@ -122,8 +119,5 @@ protected:
   uint64_t m_mediaPresDuration{0}; // MPD Media presentation duration attribute value, in ms (may be not provided)
 
   uint64_t m_minimumUpdatePeriod{PLAYLIST::NO_VALUE}; // in seconds, NO_VALUE if not set
-
-  // Determines if a custom PSSH initialization license data is provided
-  bool m_isCustomInitPssh{false};
 };
 } // namespace adaptive

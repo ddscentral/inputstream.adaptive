@@ -115,7 +115,7 @@ bool TestAdaptiveStream::DownloadSegment(const DownloadInfo& downloadInfo)
         break;
 
       m_tree->OnDataArrived(downloadInfo.m_segmentBuffer->segment_number,
-                            downloadInfo.m_segmentBuffer->segment.pssh_set_, m_decrypterIv,
+                            downloadInfo.m_segmentBuffer->segment.AESKeyInfo(), m_decrypterIv,
                             bufferData, bytesRead, segmentBuffer, segmentBuffer.size(), false);
 
       totalByteRead += bytesRead;
@@ -151,9 +151,9 @@ void AESDecrypterTest::decrypt(const AP4_UI08* aes_key,
 {
 }
 
-std::string AESDecrypterTest::convertIV(const std::string& input)
+std::vector<uint8_t> AESDecrypterTest::convertIV(const std::string& input)
 {
-  std::string result;
+  std::vector<uint8_t> result;
   return result;
 }
 
@@ -169,12 +169,12 @@ std::string DASHTestTree::RunManifestUpdate(std::string manifestUpdFile)
   return m_manifestUpdUrl;
 }
 
-bool DASHTestTree::DownloadManifestUpd(std::string_view url,
+bool DASHTestTree::DownloadManifestUpd(const std::string& url,
                                        const std::map<std::string, std::string>& reqHeaders,
                                        const std::vector<std::string>& respHeaders,
                                        UTILS::CURL::HTTPResponse& resp)
 {
-  m_manifestUpdUrl = url.data();
+  m_manifestUpdUrl = url;
 
   if (testHelper::DownloadFile(url, reqHeaders, respHeaders, resp))
   {
@@ -188,7 +188,7 @@ HLSTestTree::HLSTestTree() : CHLSTree()
   m_decrypter = std::make_unique<AESDecrypterTest>(std::string());
 }
 
-bool HLSTestTree::DownloadKey(std::string_view url,
+bool HLSTestTree::DownloadKey(const std::string& url,
                               const std::map<std::string, std::string>& reqHeaders,
                               const std::vector<std::string>& respHeaders,
                               UTILS::CURL::HTTPResponse& resp)
@@ -200,7 +200,7 @@ bool HLSTestTree::DownloadKey(std::string_view url,
   return false;
 }
 
-bool HLSTestTree::DownloadManifestChild(std::string_view url,
+bool HLSTestTree::DownloadManifestChild(const std::string& url,
                                         const std::map<std::string, std::string>& reqHeaders,
                                         const std::vector<std::string>& respHeaders,
                                         UTILS::CURL::HTTPResponse& resp)

@@ -33,7 +33,7 @@ namespace
 template<typename T>
 T NumberFromSS(std::string_view str, T fallback) noexcept
 {
-  std::istringstream iss{str.data()};
+  std::istringstream iss{std::string(str)};
   T result{fallback};
   iss >> result;
   return result;
@@ -211,7 +211,7 @@ std::set<std::string> UTILS::STRING::SplitToSet(std::string_view input,
                                                 int maxStrings /* = 0 */)
 {
   std::set<std::string> result;
-  StringUtils::SplitTo(std::inserter(result, result.end()), input.data(), delimiter, maxStrings);
+  StringUtils::SplitTo(std::inserter(result, result.end()), std::string(input), delimiter, maxStrings);
   return result;
 }
 
@@ -220,7 +220,7 @@ std::vector<std::string> UTILS::STRING::SplitToVec(std::string_view input,
                                                    int maxStrings /* = 0 */)
 {
   std::vector<std::string> result;
-  StringUtils::SplitTo(std::back_inserter(result), input.data(), delimiter, maxStrings);
+  StringUtils::SplitTo(std::back_inserter(result), std::string(input), delimiter, maxStrings);
   return result;
 }
 
@@ -353,4 +353,59 @@ std::vector<uint8_t> UTILS::STRING::HexToBytes(const std::string& hex)
   }
 
   return bytes;
+}
+
+int UTILS::STRING::GetNumbers(std::string_view str)
+{
+  std::string extractedNbr;
+
+  for (auto c : str)
+  {
+    if (std::isdigit(c))
+      extractedNbr += c;
+  }
+
+  return ToInt32(extractedNbr);
+}
+
+std::vector<std::string> UTILS::STRING::ExtractPlaceholders(const std::string& text,
+                                                            const char openChar,
+                                                            const char closeChar)
+{
+  std::vector<std::string> placeholders;
+  std::string currentPlaceholder;
+  int braceCount{0};
+
+  for (char ch : text)
+  {
+    if (ch == openChar)
+    {
+      // Start a new placeholder
+      if (braceCount == 0)
+      {
+        currentPlaceholder.clear();
+      }
+      braceCount++;
+      currentPlaceholder += ch;
+    }
+    else if (ch == closeChar)
+    {
+      // Close a placeholder
+      if (braceCount > 0)
+      {
+        currentPlaceholder += ch;
+        braceCount--;
+        if (braceCount == 0)
+        {
+          placeholders.push_back(currentPlaceholder);
+        }
+      }
+    }
+    else if (braceCount > 0)
+    {
+      currentPlaceholder += ch;
+    }
+  }
+
+  return placeholders;
 }

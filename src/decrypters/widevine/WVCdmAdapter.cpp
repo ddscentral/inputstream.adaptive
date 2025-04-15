@@ -11,6 +11,7 @@
 #include "CdmFixedBuffer.h"
 #include "WVCencSingleSampleDecrypter.h"
 #include "WVDecrypter.h"
+#include "cdm/debug.h"
 #include "decrypters/Helpers.h"
 #include "utils/FileUtils.h"
 #include "utils/log.h"
@@ -28,11 +29,37 @@ constexpr const char* LIBRARY_FILENAME = "libwidevinecdm.dylib";
 #else
 constexpr const char* LIBRARY_FILENAME = "libwidevinecdm.so";
 #endif
+
+void DebugLog(const CDM_DBG::LogLevel level, const char* msg)
+{
+  switch (level)
+  {
+    case CDM_DBG::LogLevel::ERROR:
+      LOG::Log(LOGERROR, msg);
+      break;
+    case CDM_DBG::LogLevel::WARNING:
+      LOG::Log(LOGWARNING, msg);
+      break;
+    case CDM_DBG::LogLevel::INFO:
+      LOG::Log(LOGINFO, msg);
+      break;
+    case CDM_DBG::LogLevel::DEBUG:
+      LOG::Log(LOGDEBUG, msg);
+      break;
+    case CDM_DBG::LogLevel::FATAL:
+      LOG::Log(LOGFATAL, msg);
+      break;
+    default:
+      break;
+  }
+}
 } // unnamed namespace
 
 CWVCdmAdapter::CWVCdmAdapter(const DRM::Config& config, CWVDecrypter* host)
   : m_config(config), m_host(host)
 {
+  CDM_DBG::SetDBGMsgCallback(DebugLog);
+
   if (m_host->GetLibraryPath().empty())
   {
     LOG::LogF(LOGERROR, "Widevine CDM library path not specified");
@@ -42,7 +69,7 @@ CWVCdmAdapter::CWVCdmAdapter(const DRM::Config& config, CWVDecrypter* host)
 
   // The license url come from license_key kodi property
   // we have to kept only the url without the parameters specified after pipe "|" char
-  std::string licUrl = m_config.license.serverUrl;
+  std::string licUrl = m_config.license.serverUri;
   const size_t urlPipePos = licUrl.find('|');
   if (urlPipePos != std::string::npos)
     licUrl.erase(urlPipePos);

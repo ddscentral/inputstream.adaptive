@@ -31,7 +31,7 @@ public:
 
   virtual TreeType GetTreeType() const override { return TreeType::SMOOTH_STREAMING; }
 
-  virtual bool Open(std::string_view url,
+  virtual bool Open(const std::string& url,
                     const std::map<std::string, std::string>& headers,
                     const std::string& data) override;
 
@@ -48,11 +48,11 @@ protected:
 
   void ParseTagStreamIndex(pugi::xml_node nodeSI,
                            PLAYLIST::CPeriod* period,
-                           const DRM::PRHeaderParser& protParser);
+                           const std::vector<DRM::DRMInfo>& drmInfos);
   void ParseTagQualityLevel(pugi::xml_node nodeQI,
                             PLAYLIST::CAdaptationSet* adpSet,
                             const uint32_t timescale,
-                            const uint16_t psshSetPos);
+                            const std::vector<DRM::DRMInfo>& drmInfos);
   void CreateSegmentTimeline();
 
   uint64_t m_ptsBase{PLAYLIST::NO_PTS_VALUE}; // The lower start PTS time between all StreamIndex tags

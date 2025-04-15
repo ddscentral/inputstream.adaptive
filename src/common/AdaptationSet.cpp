@@ -20,7 +20,7 @@ using namespace UTILS;
 
 void PLAYLIST::CAdaptationSet::AddCodecs(std::string_view codecs)
 {
-  std::set<std::string> list = STRING::SplitToSet(codecs.data(), ',');
+  std::set<std::string> list = STRING::SplitToSet(codecs, ',');
   m_codecs.insert(list.begin(), list.end());
 }
 
@@ -41,7 +41,7 @@ bool PLAYLIST::CAdaptationSet::ContainsCodec(std::string_view codec)
 
 void PLAYLIST::CAdaptationSet::AddSwitchingIds(std::string_view switchingIds)
 {
-  std::vector<std::string> list = STRING::SplitToVec(switchingIds.data(), ',');
+  std::vector<std::string> list = STRING::SplitToVec(switchingIds, ',');
   m_switchingIds.insert(m_switchingIds.end(), list.begin(), list.end());
 }
 
@@ -196,6 +196,18 @@ PLAYLIST::CAdaptationSet* PLAYLIST::CAdaptationSet::FindByCodec(
   auto itAdpSet = std::find_if(adpSets.cbegin(), adpSets.cend(),
                                [&codec](const std::unique_ptr<CAdaptationSet>& item)
                                { return CODEC::Contains(item->GetCodecs(), codec); });
+  if (itAdpSet != adpSets.cend())
+    return (*itAdpSet).get();
+
+  return nullptr;
+}
+
+CAdaptationSet* PLAYLIST::CAdaptationSet::FindByCodec(
+    std::vector<std::unique_ptr<CAdaptationSet>>& adpSets, std::string codec, const ColorTRC trc)
+{
+  auto itAdpSet = std::find_if(
+      adpSets.cbegin(), adpSets.cend(), [&codec, &trc](const std::unique_ptr<CAdaptationSet>& item)
+      { return CODEC::Contains(item->GetCodecs(), codec) && item->GetColorTRC() == trc; });
   if (itAdpSet != adpSets.cend())
     return (*itAdpSet).get();
 

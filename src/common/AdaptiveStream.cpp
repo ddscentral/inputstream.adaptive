@@ -64,7 +64,7 @@ AdaptiveStream::AdaptiveStream(AdaptiveTree* tree,
   clsId = globalClsId++;
   LOG::Log(LOGDEBUG,
            "Created AdaptiveStream [AS-%u] with adaptation set ID: \"%s\", stream type: %s", clsId,
-           adp->GetId().data(), StreamTypeToString(adp->GetStreamType()).data());
+           adp->GetId().c_str(), StreamTypeToString(adp->GetStreamType()).c_str());
 }
 
 AdaptiveStream::~AdaptiveStream()
@@ -176,7 +176,8 @@ bool adaptive::AdaptiveStream::DownloadImpl(const DownloadInfo& downloadInfo,
             std::vector<uint8_t>& segmentBuffer = downloadInfo.m_segmentBuffer->buffer;
 
             m_tree->OnDataArrived(downloadInfo.m_segmentBuffer->segment_number,
-                                  downloadInfo.m_segmentBuffer->segment.pssh_set_, m_decrypterIv,
+                                  downloadInfo.m_segmentBuffer->segment.AESKeyInfo(),
+                                  m_decrypterIv,
                                   bufferData.data(), bytesRead, segmentBuffer, segmentBuffer.size(),
                                   isLastChunk);
           }
@@ -248,12 +249,12 @@ bool AdaptiveStream::PrepareDownload(const PLAYLIST::CRepresentation* rep,
 
     if (seg.IsInitialization()) // Templated initialization segment
     {
-      streamUrl = segTpl->FormatUrl(segTpl->GetInitialization(), rep->GetId().data(),
+      streamUrl = segTpl->FormatUrl(segTpl->GetInitialization(), rep->GetId(),
                                     rep->GetBandwidth(), rep->GetStartNumber(), 0);
     }
     else // Templated media segment
     {
-      streamUrl = segTpl->FormatUrl(segTpl->GetMedia(), rep->GetId().data(), rep->GetBandwidth(),
+      streamUrl = segTpl->FormatUrl(segTpl->GetMedia(), rep->GetId(), rep->GetBandwidth(),
                                     seg.m_number, seg.m_time);
     }
   }
@@ -668,24 +669,29 @@ bool AdaptiveStream::start_stream(const uint64_t startPts)
         !m_tree->IsChangingPeriod() && !CSrvBroker::GetKodiProps().IsPlayTimeshift() &&
         !current_rep_->Timeline().IsEmpty())
     {
-      size_t segPos = current_rep_->Timeline().GetSize() - 1;
-      //! @todo: segment duration is not fixed for each segment, this can calculate a wrong delay
-      const CSegment* lastSeg = current_rep_->Timeline().GetBack();
-      uint64_t segDur = lastSeg->m_endPts - lastSeg->startPTS_;
+      uint64_t totalDurSecs{0};
+      const uint64_t liveDelaySecs = m_tree->m_liveDelay;
+      const uint32_t timescale = current_rep_->GetTimescale();
 
-      size_t segPosDelay =
-          static_cast<size_t>((m_tree->m_liveDelay * current_rep_->GetTimescale()) / segDur);
-
-      if (segPos > segPosDelay)
-        segPos -= segPosDelay;
-      else
+      //! @todo: This code does not consider that the live delay could cause the startup segment to be selected
+      //! in the previous period when the current period has too few segments
+      //! more likely live delay management should be moved just after manifest parsing and before period init
+      for (auto itSeg = current_rep_->Timeline().rbegin(); itSeg != current_rep_->Timeline().rend();
+           ++itSeg)
       {
-        //! @todo: Unhandled! should fall on previous period (when exists)
-        //! since is needed change period all this code should be moved just after manifest parsing and before period init
-        segPos = 0;
-      }
+        // Implicit rounding down because managing PTS milliseconds negatively affects segment selection
+        totalDurSecs += (itSeg->m_endPts - itSeg->startPTS_) / timescale;
+        // Dont use >= since if live delay is equal to the segment duration
+        // we may fall too close to the live edge to get new segments from manifest update
+        if (totalDurSecs > liveDelaySecs)
+        {
+          // current_segment_ expects the previous segment as a reference to find the next segment (this one)
+          if (itSeg != current_rep_->Timeline().rend())
+            current_rep_->current_segment_ = &*(++itSeg);
 
-      current_rep_->current_segment_ = current_rep_->Timeline().Get(segPos);
+          break;
+        }
+      }
     }
     else if (m_startEvent == EVENT_TYPE::REP_CHANGE) // switching streams, align new stream segment no.
     {
@@ -753,8 +759,8 @@ bool AdaptiveStream::start_stream(const uint64_t startPts)
 
   if (!current_rep_->Timeline().Get(0))
   {
-    LOG::LogF(LOGERROR, "[AS-%u] Segment at position 0 not found from representation id: %s",
-              clsId, current_rep_->GetId().data());
+    LOG::LogF(LOGERROR, "[AS-%u] Segment at position 0 not found from representation id: %s", clsId,
+              current_rep_->GetId().c_str());
     return false;
   }
 
@@ -833,7 +839,7 @@ bool AdaptiveStream::ensureSegment()
     if (valid_segment_buffers_ == 0 && available_segment_buffers_ > 0)
     {
       LOG::LogF(LOGDEBUG, "[AS-%u] Download not started yet (rep. id \"%s\" period id \"%s\")",
-                clsId, current_rep_->GetId().data(), current_period_->GetId().data());
+                clsId, current_rep_->GetId().c_str(), current_period_->GetId().c_str());
       return false;
     }
 
@@ -866,7 +872,7 @@ bool AdaptiveStream::ensureSegment()
         {
           current_rep_->SetIsWaitForSegment(true);
           LOG::LogF(LOGDEBUG, "[AS-%u] Begin WaitForSegment stream rep. id \"%s\" period id \"%s\"",
-                    clsId, current_rep_->GetId().data(), current_period_->GetId().data());
+                    clsId, current_rep_->GetId().c_str(), current_period_->GetId().c_str());
           return false;
         }
       }
@@ -1196,7 +1202,7 @@ bool AdaptiveStream::seek_time(double seek_seconds, bool preceeding, bool& needR
     if (!current_rep_->Timeline().Get(0))
     {
       LOG::LogF(LOGERROR, "[AS-%u] Segment at position 0 not found from representation id: %s",
-                clsId, current_rep_->GetId().data());
+                clsId, current_rep_->GetId().c_str());
       return false;
     }
 
@@ -1282,7 +1288,7 @@ bool AdaptiveStream::GenerateSidxSegments(PLAYLIST::CRepresentation* rep)
   {
     LOG::LogF(LOGERROR,
               "[AS-%u] Cannot generate segments from SIDX on repr id \"%s\" with container \"%i\"",
-              clsId, rep->GetId().data(), static_cast<int>(containerType));
+              clsId, rep->GetId().c_str(), static_cast<int>(containerType));
     return false;
   }
 
@@ -1310,10 +1316,20 @@ bool AdaptiveStream::GenerateSidxSegments(PLAYLIST::CRepresentation* rep)
   }
   else
   {
+    LOG::LogF(LOGERROR,
+              "[AS-%u] Cannot generate segments from SIDX on repr id \"%s\", "
+              "due to missing data range positions",
+              clsId, rep->GetId().data());
+    return false;
+    /*
+     *! @todo: This part is not clear for which manifest use it should be
+     *         if there are no new issues about it, this code can be deleted in the future
+     *
     // We dont know the range positions for the index segment
     static const uint64_t indexRangeEnd = 1024 * 200;
     seg.range_begin_ = 0;
     seg.range_end_ = indexRangeEnd;
+    */
   }
 
   std::vector<uint8_t> sidxBuffer;

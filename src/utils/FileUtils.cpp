@@ -110,16 +110,35 @@ bool UTILS::FILESYS::CheckDuplicateFilePath(std::string& filePath, uint32_t file
   return true;
 }
 
-bool UTILS::FILESYS::RemoveDirectory(std::string_view path, bool recursive /* = true */)
+bool UTILS::FILESYS::RemoveDirectory(const std::string& path, bool recursive /* = true */)
 {
-  return kodi::vfs::RemoveDirectory(path.data(), recursive);
+  return kodi::vfs::RemoveDirectory(path, recursive);
 }
 
-std::string UTILS::FILESYS::GetFileExtension(std::string path)
+std::string UTILS::FILESYS::GetFileExtension(std::string_view path)
 {
   size_t extPos = path.rfind('.');
   if (extPos != std::string::npos)
-    return path.substr(extPos + 1);
+    return std::string(path.substr(extPos + 1));
 
   return {};
+}
+
+bool UTILS::FILESYS::FindFilePath(const std::string& path,
+                              const std::string& filename,
+                              std::string& filePath)
+{
+  std::vector<kodi::vfs::CDirEntry> items;
+  if (kodi::vfs::GetDirectory(path, "", items))
+  {
+    for (auto& item : items)
+    {
+      if (item.Label() != filename)
+        continue;
+
+      filePath = item.Path();
+      return true;
+    }
+  }
+  return false;
 }

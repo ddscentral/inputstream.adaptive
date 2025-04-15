@@ -36,9 +36,7 @@ public:
                                CryptoMode cryptoMode);
   virtual ~CWVCencSingleSampleDecrypter();
 
-  void GetCapabilities(const std::vector<uint8_t>& keyId,
-                       uint32_t media,
-                       DecrypterCapabilites& caps);
+  void GetCapabilities(const std::vector<uint8_t>& keyId, DecrypterCapabilites& caps);
   virtual std::string GetSessionId() override;
   void CloseSessionId();
   AP4_DataBuffer GetChallengeData();
@@ -103,9 +101,9 @@ private:
   };
   std::vector<WVSKEY> m_keys;
 
-  AP4_UI16 m_hdcpVersion;
-  int m_hdcpLimit;
-  int m_resolutionLimit;
+  uint16_t m_hdcpVersion{DRM::HDCP_V_MAX};
+  int m_hdcpLimit{0};
+  int m_resolutionLimit{0};
 
   AP4_DataBuffer m_decryptIn;
   AP4_DataBuffer m_decryptOut;

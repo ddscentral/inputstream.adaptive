@@ -21,10 +21,6 @@
 #include <mutex>
 #include <string_view>
 
-// \brief Current version of gtest dont support compare std::string_view values
-//        this shortens the conversion needed
-using STR = std::string;
-
 constexpr std::string_view URN_WIDEVINE = "urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed";
 
 std::string GetEnv(const std::string& var);
@@ -90,7 +86,7 @@ public:
                size_t dstOffset,
                size_t& dataSize,
                bool lastChunk);
-  std::string convertIV(const std::string& input);
+  std::vector<uint8_t> convertIV(const std::string& input);
   void ivFromSequence(uint8_t* buffer, uint64_t sid);
   const std::string& getLicenseKey() const { return m_licenseKey; };
   // bool RenewLicense(const std::string& pluginUrl);
@@ -115,7 +111,7 @@ public:
   std::string RunManifestUpdate(std::string manifestUpdFile);
 
 private:
-  bool DownloadManifestUpd(std::string_view url,
+  bool DownloadManifestUpd(const std::string& url,
                            const std::map<std::string, std::string>& reqHeaders,
                            const std::vector<std::string>& respHeaders,
                            UTILS::CURL::HTTPResponse& resp) override;
@@ -136,12 +132,12 @@ public:
   virtual HLSTestTree* Clone() const override { return new HLSTestTree{*this}; }
 
 private:
-  bool DownloadKey(std::string_view url,
+  bool DownloadKey(const std::string& url,
                    const std::map<std::string, std::string>& reqHeaders,
                    const std::vector<std::string>& respHeaders,
                    UTILS::CURL::HTTPResponse& resp) override;
 
-  bool DownloadManifestChild(std::string_view url,
+  bool DownloadManifestChild(const std::string& url,
                              const std::map<std::string, std::string>& reqHeaders,
                              const std::vector<std::string>& respHeaders,
                              UTILS::CURL::HTTPResponse& resp) override;

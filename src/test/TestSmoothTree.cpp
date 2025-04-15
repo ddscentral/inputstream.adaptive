@@ -20,6 +20,7 @@ class SmoothTreeTest : public ::testing::Test
 protected:
   void SetUp() override
   {
+    CSrvBroker::GetInstance()->Initialize();
     m_reprChooser = new CTestRepresentationChooserDefault();
     tree = new SmoothTestTree();
   }
@@ -44,7 +45,7 @@ protected:
   {
     testHelper::testFile = filePath;
 
-    CSrvBroker::GetInstance()->Init({});
+    CSrvBroker::GetInstance()->InitStage1({});
 
     // Download the manifest
     UTILS::CURL::HTTPResponse resp;
@@ -59,7 +60,7 @@ protected:
     // We set the download speed to calculate the initial network bandwidth
     m_reprChooser->SetDownloadSpeed(500000);
 
-    tree->Configure(m_reprChooser, std::vector<std::string_view>{DRM::URN_WIDEVINE}, "");
+    tree->Configure(m_reprChooser, "");
 
     // Parse the manifest
     if (!tree->Open(resp.effectiveUrl, resp.headers, resp.data))

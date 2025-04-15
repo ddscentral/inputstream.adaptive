@@ -13,6 +13,8 @@
 #include "common/AdaptiveUtils.h"
 #include "utils/CurlUtils.h"
 
+#include <unordered_map>
+
 namespace adaptive
 {
 
@@ -36,10 +38,9 @@ public:
   virtual CHLSTree* Clone() const override { return new CHLSTree{*this}; }
 
   virtual void Configure(CHOOSER::IRepresentationChooser* reprChooser,
-                         std::vector<std::string_view> supportedKeySystems,
-                         std::string_view manifestUpdateParam) override;
+                         const std::string& manifestUpdateParam) override;
 
-  virtual bool Open(std::string_view url,
+  virtual bool Open(const std::string& url,
                     const std::map<std::string, std::string>& headers,
                     const std::string& data) override;
 
@@ -48,7 +49,7 @@ public:
                                      PLAYLIST::CRepresentation* rep) override;
 
   virtual void OnDataArrived(uint64_t segNum,
-                             uint16_t psshSet,
+                             std::optional<CAesKeyInfo>& aesKey,
                              uint8_t iv[16],
                              const uint8_t* srcData,
                              size_t srcDataSize,
@@ -64,6 +65,8 @@ public:
   virtual void OnRequestSegments(PLAYLIST::CPeriod* period,
                                  PLAYLIST::CAdaptationSet* adp,
                                  PLAYLIST::CRepresentation* rep) override;
+
+  virtual void OnPeriodChange() override;
 
 protected:
   // \brief Rendition features
@@ -98,6 +101,7 @@ protected:
     float m_frameRate{0};
     std::string m_groupIdAudio;
     std::string m_groupIdSubtitles;
+    std::string m_videoRange;
     std::string m_uri;
     bool m_isUriDuplicate{false}; // Another variant have same uri
   };
@@ -112,7 +116,7 @@ protected:
   /*!
    * \brief Download the key from media initialization section, overridable method for test project
    */
-  virtual bool DownloadKey(std::string_view url,
+  virtual bool DownloadKey(const std::string& url,
                            const std::map<std::string, std::string>& reqHeaders,
                            const std::vector<std::string>& respHeaders,
                            UTILS::CURL::HTTPResponse& resp);
@@ -120,7 +124,7 @@ protected:
   /*!
    * \brief Download manifest child, overridable method for test project
    */
-  virtual bool DownloadManifestChild(std::string_view url,
+  virtual bool DownloadManifestChild(const std::string& url,
                                      const std::map<std::string, std::string>& reqHeaders,
                                      const std::vector<std::string>& respHeaders,
                                      UTILS::CURL::HTTPResponse& resp);
@@ -169,10 +173,10 @@ protected:
 
   virtual bool ParseManifest(const std::string& stream);
 
-  PLAYLIST::EncryptionType ProcessEncryption(std::string_view baseUrl,
-                                             std::map<std::string, std::string>& attribs);
-
-  bool GetUriByteData(std::string_view uri, std::vector<uint8_t>& data);
+  void ProcessEncryption(std::string baseUrl,
+                         std::map<std::string, std::string>& attribs,
+                         std::optional<CAesKeyInfo>& aesKey,
+                         std::unordered_map<std::string_view, DRM::DRMInfo>& drmInfos);
 
   /*!
    * \brief Parse a rendition and set the data to the AdaptationSet and Representation.
@@ -196,8 +200,10 @@ protected:
                             const std::string& data,
                             std::string_view info);
 
-
   std::unique_ptr<IAESDecrypter> m_decrypter;
+
+  // Temporary cache to store the downloaded AES KEY's
+  std::unordered_map<std::string, std::vector<uint8_t>> m_aesUrlKeyCache;
 
 private:
   /*!
@@ -245,11 +251,6 @@ private:
   uint8_t m_segmentIntervalSec = 4;
   bool m_hasDiscontSeq = false;
   uint32_t m_discontSeq = 0;
-
-  std::vector<uint8_t> m_currentPssh; // Last processed encryption PSSH from URI
-  std::string m_currentDefaultKID; // Last processed encryption KID
-  std::string m_currentKidUrl; // Last processed encryption KID URI
-  std::string m_currentIV; // Last processed encryption IV
 };
 
 } // namespace

@@ -43,7 +43,7 @@ public:
     return std::make_unique<CAdaptationSet>(parent);
   }
 
-  std::string_view GetId() const { return m_id; }
+  const std::string& GetId() const { return m_id; }
   void SetId(std::string_view id) { m_id = id; }
 
   std::string GetName() const { return m_name; }
@@ -96,6 +96,7 @@ public:
 
   void AddRepresentation(std::unique_ptr<CRepresentation>& representation);
   std::vector<std::unique_ptr<CRepresentation>>& GetRepresentations() { return m_representations; }
+  const std::vector<std::unique_ptr<CRepresentation>>& GetRepresentations() const { return m_representations; }
   std::vector<CRepresentation*> GetRepresentationsPtr();
 
   bool IsImpaired() const { return m_isImpaired; }
@@ -133,6 +134,16 @@ public:
    */
   static CAdaptationSet* FindByCodec(std::vector<std::unique_ptr<CAdaptationSet>>& adpSets,
                                      std::string codec);
+
+  /*!
+   * \brief Find an adaptation set by codec string and TRC.
+   * \param adpSets The adaptation set list where to search
+   * \param codec The codec string
+   * \return The adaptation set if found, otherwise nullptr
+   */
+  static CAdaptationSet* FindByCodec(std::vector<std::unique_ptr<CAdaptationSet>>& adpSets,
+                                     std::string codec,
+                                     const ColorTRC trc);
 
   /*!
    * \brief Find a mergeable adaptation set by comparing properties.

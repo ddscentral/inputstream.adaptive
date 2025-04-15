@@ -61,7 +61,7 @@ bool IsValidKeySystem(std::string_view keySystem);
  * \param url An URL
  * \return The hash of a base domain URL
  */
-std::string GenerateUrlDomainHash(std::string_view url);
+std::string GenerateUrlDomainHash(const std::string& url);
 
 /*!
  * \brief Convert DRM URN to System ID.
@@ -76,6 +76,13 @@ std::string UrnToSystemId(std::string_view urn);
  * \return The System ID's, failed conversions are not included.
  */
 std::vector<std::string> UrnsToSystemIds(const std::vector<std::string_view>& urns);
+
+/*!
+ * \brief Convert DRM URN to Key System.
+ * \param urn The URN
+ * \return The Key System, otherwise empty if fails.
+ */
+std::string_view UrnToKeySystem(std::string_view urn);
 
 /*!
  * \brief Convert a hexdecimal KeyId of 32 chars to 16 bytes.
