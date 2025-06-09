@@ -38,7 +38,6 @@ add_executable(${BINARY}
     ../common/SegmentBase.cpp
     ../common/SegmentList.cpp
     ../common/SegTemplate.cpp
-    ../oscompat.cpp
     ../SrvBroker.cpp
     ../CompSettings.cpp
     ../CompKodiProps.cpp
@@ -47,7 +46,9 @@ add_executable(${BINARY}
     ../utils/CurlUtils.cpp
     ../utils/DigestMD5Utils.cpp
     ../utils/FileUtils.cpp
+    ../utils/GUIUtils.cpp
     ../utils/JsonUtils.cpp
+    ../utils/oscompat.cpp
     ../utils/StringUtils.cpp
     ../utils/UrlUtils.cpp
     ../utils/Utils.cpp

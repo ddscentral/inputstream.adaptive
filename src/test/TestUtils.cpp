@@ -44,10 +44,10 @@ TEST_F(UtilsTest, DetermineBaseDomain)
   EXPECT_EQ(URL::GetBaseDomain(url), "https://www.foo.bar");
 
   url = "https://www.foo.bar:1234";
-  EXPECT_EQ(URL::GetBaseDomain(url), "https://www.foo.bar");
+  EXPECT_EQ(URL::GetBaseDomain(url), "https://www.foo.bar:1234");
 
   url = "https://www.foo.bar:1234/mpd/test.mpd?ping=pong";
-  EXPECT_EQ(URL::GetBaseDomain(url), "https://www.foo.bar");
+  EXPECT_EQ(URL::GetBaseDomain(url), "https://www.foo.bar:1234");
 
   url = "https://www.foo.bar/example/smil:rtmp.smil/playlist.m3u8?ping=pong";
   EXPECT_EQ(URL::GetBaseDomain(url), "https://www.foo.bar");
@@ -133,6 +133,17 @@ TEST_F(UtilsTest, JoinUrls)
 
   otherUrl = "./";
   EXPECT_EQ(URL::Join(baseUrl, otherUrl), "https://foo.bar/sub1/sub2/");
+
+
+  baseUrl = "https://foo.bar/sub1../sub2./";
+  otherUrl = ".ending";
+  EXPECT_EQ(URL::Join(baseUrl, otherUrl), "https://foo.bar/sub1../sub2./.ending");
+
+  otherUrl = "./.ending/.";
+  EXPECT_EQ(URL::Join(baseUrl, otherUrl), "https://foo.bar/sub1../sub2./.ending/");
+
+  otherUrl = "./.ending/./";
+  EXPECT_EQ(URL::Join(baseUrl, otherUrl), "https://foo.bar/sub1../sub2./.ending/");
 
   // Less common and malformed test cases
 

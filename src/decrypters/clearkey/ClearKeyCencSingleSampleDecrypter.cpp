@@ -18,12 +18,11 @@
 #include "utils/UrlUtils.h"
 #include "utils/log.h"
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
 
-#include <rapidjson/document.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
-
+using njson = nlohmann::json;
 using namespace UTILS;
 
 uint32_t CClearKeyCencSingleSampleDecrypter::g_sessionIdCount = 1;
@@ -41,51 +40,14 @@ CClearKeyCencSingleSampleDecrypter::CClearKeyCencSingleSampleDecrypter(
     return;
   }
 
-  std::string licenseData;
-  std::vector<uint8_t> uriData;
+  // Make license request to get KID/KEY pairs
+  std::vector<uint8_t> licenseData;
 
-  if (URL::GetUriByteData(licenseUri, uriData)) // Provided license data in URI format
+  // Check if provided license data in URI format, otherwise make the license request
+  if (!URL::GetUriByteData(licenseUri, licenseData))
   {
-    licenseData.assign(uriData.begin(), uriData.end());
-  }
-  else // Make the request to the server by using URL
-  {
-    const std::string postData = CreateLicenseRequest(defaultKeyId);
-
-    if (CSrvBroker::GetSettings().IsDebugLicense())
-    {
-      const std::string debugFilePath =
-          FILESYS::PathCombine(m_host->GetLibraryPath(), "ClearKey.init");
-      FILESYS::SaveFile(debugFilePath, postData.c_str(), true);
-    }
-
-    CURL::CUrl curl{std::string(licenseUri), postData};
-    curl.AddHeader("Accept", "application/json");
-    curl.AddHeader("Content-Type", "application/json");
-    curl.AddHeaders(licenseHeaders);
-
-    std::string response;
-    int statusCode = curl.Open();
-    if (statusCode == -1 || statusCode >= 400)
-    {
-      LOG::Log(LOGERROR, "License server returned failure (HTTP error %i)", statusCode);
+    if (!MakeLicenseRequest(std::string(licenseUri), licenseHeaders, defaultKeyId, licenseData))
       return;
-    }
-
-    if (curl.Read(response) != CURL::ReadStatus::IS_EOF)
-    {
-      LOG::LogF(LOGERROR, "Could not read the license server response");
-      return;
-    }
-
-    if (CSrvBroker::GetSettings().IsDebugLicense())
-    {
-      const std::string debugFilePath =
-          FILESYS::PathCombine(m_host->GetLibraryPath(), "ClearKey.response");
-      FILESYS::SaveFile(debugFilePath, response, true);
-    }
-
-    licenseData = response;
   }
 
   if (!ParseLicenseResponse(licenseData))
@@ -94,16 +56,14 @@ CClearKeyCencSingleSampleDecrypter::CClearKeyCencSingleSampleDecrypter(
     return;
   }
 
-  const std::string b64DefaultKeyId = BASE64::Encode(defaultKeyId);
-  if (!STRING::KeyExists(m_keyPairs, b64DefaultKeyId))
+  if (!STRING::KeyExists(m_kidPairs, defaultKeyId))
   {
-    LOG::LogF(LOGERROR, "Key not found on license data");
+    LOG::LogF(LOGERROR, "License data does not have the required KID");
+    m_kidPairs.clear();
     return;
   }
 
-  const std::vector<uint8_t> keyBytes = BASE64::Decode(m_keyPairs[b64DefaultKeyId]);
-
-  InitDecrypter(defaultKeyId, keyBytes);
+  InitDecrypter();
 }
 
 CClearKeyCencSingleSampleDecrypter::CClearKeyCencSingleSampleDecrypter(
@@ -112,62 +72,138 @@ CClearKeyCencSingleSampleDecrypter::CClearKeyCencSingleSampleDecrypter(
     CClearKeyDecrypter* host)
   : m_host(host)
 {
-  std::vector<uint8_t> hexKey;
   // Currently HLS manifest only support this
-  // and the init data should contain only the key
-  hexKey = initData;
+  // the initData should contain only the key
+  m_kidPairs.emplace(defaultKeyId, initData);
 
-  InitDecrypter(defaultKeyId, hexKey);
+  InitDecrypter();
 }
 
-void CClearKeyCencSingleSampleDecrypter::InitDecrypter(const std::vector<uint8_t>& defaultKeyId,
-                                                         const std::vector<uint8_t>& key)
+void CClearKeyCencSingleSampleDecrypter::InitDecrypter()
 {
-  AP4_CencSingleSampleDecrypter::Create(AP4_CENC_CIPHER_AES_128_CTR, key.data(),
-                                        static_cast<AP4_Size>(key.size()), 0, 0, nullptr, false,
-                                        m_singleSampleDecrypter);
   SetParentIsOwner(false);
-  AddSessionKey(defaultKeyId);
 
   // Define a session id
   m_sessionId = "ck_" + std::to_string(g_sessionIdCount++);
 }
 
-void CClearKeyCencSingleSampleDecrypter::AddSessionKey(const std::vector<uint8_t>& keyId)
-{
-  if (std::find(m_keyIds.begin(), m_keyIds.end(), keyId) == m_keyIds.end())
-    m_keyIds.emplace_back(keyId);
-}
-
 bool CClearKeyCencSingleSampleDecrypter::HasKeyId(const std::vector<uint8_t>& keyid)
 {
-  if (!keyid.empty())
+  return STRING::KeyExists(m_kidPairs, keyid);
+}
+
+AP4_UI32 CClearKeyCencSingleSampleDecrypter::AddPool()
+{
+  const AP4_UI32 poolId = static_cast<AP4_UI32>(m_pool.size());
+
+  m_pool.emplace(poolId, PINFO());
+
+  return poolId;
+}
+
+void CClearKeyCencSingleSampleDecrypter::RemovePool(AP4_UI32 poolId)
+{
+  m_pool.erase(poolId);
+}
+
+AP4_Result CClearKeyCencSingleSampleDecrypter::SetFragmentInfo(AP4_UI32 poolId,
+                                                               const std::vector<uint8_t>& keyId,
+                                                               const AP4_UI08 nalLengthSize,
+                                                               AP4_DataBuffer& annexbSpsPps,
+                                                               AP4_UI32 flags,
+                                                               CryptoInfo cryptoInfo)
+{
+  if (!STRING::KeyExists(m_pool, poolId))
   {
-    for (const std::vector<uint8_t>& key : m_keyIds)
-    {
-      if (key == keyid)
-        return true;
-    }
+    LOG::LogF(LOGERROR, "Cannot set fragment info, the pool id %u dont exist", poolId);
+    return AP4_ERROR_INVALID_PARAMETERS;
   }
-  return false;
+
+  if (cryptoInfo.m_mode != CryptoMode::NONE && cryptoInfo.m_mode != CryptoMode::AES_CTR &&
+      cryptoInfo.m_mode != CryptoMode::AES_CBC)
+  {
+    LOG::LogF(LOGERROR, "Cannot set fragment info, unsupported crypto mode (%i)",
+              static_cast<int>(cryptoInfo.m_mode));
+    return AP4_ERROR_INVALID_PARAMETERS;
+  }
+
+  PINFO& pInfo = m_pool[poolId];
+  FINFO& fInfo = pInfo.fInfo;
+
+  // Compare the encryption info from the previous fragment to see if it has been changed,
+  // if so, the decrypter will have to be recreated
+  pInfo.isChanged = fInfo.kid != keyId || fInfo.cryptoInfo.m_mode != cryptoInfo.m_mode ||
+                    fInfo.cryptoInfo.m_cryptBlocks != cryptoInfo.m_cryptBlocks ||
+                    fInfo.cryptoInfo.m_skipBlocks != cryptoInfo.m_skipBlocks;
+
+  // Update with the current fragment info
+  fInfo.kid = keyId;
+  fInfo.cryptoInfo = cryptoInfo;
+
+  return AP4_SUCCESS;
 }
 
 AP4_Result CClearKeyCencSingleSampleDecrypter::DecryptSampleData(
-    AP4_UI32 pool_id,
-    AP4_DataBuffer& data_in,
-    AP4_DataBuffer& data_out,
+    AP4_UI32 poolId,
+    AP4_DataBuffer& dataIn,
+    AP4_DataBuffer& dataOut,
     const AP4_UI08* iv,
-    unsigned int subsample_count,
-    const AP4_UI16* bytes_of_cleartext_data,
-    const AP4_UI32* bytes_of_encrypted_data)
+    unsigned int subsampleCount,
+    const AP4_UI16* bytesOfCleartextData,
+    const AP4_UI32* bytesOfEncryptedData)
 {
-  if (!m_singleSampleDecrypter)
+  if (m_pool.empty())
   {
-    return AP4_FAILURE;
+    LOG::LogF(LOGERROR, "Cannot decrypt data, the pool is empty");
+    return AP4_ERROR_INTERNAL;
   }
-  return (m_singleSampleDecrypter)
-      ->DecryptSampleData(data_in, data_out, iv, subsample_count, bytes_of_cleartext_data,
-                          bytes_of_encrypted_data);
+  if (!STRING::KeyExists(m_pool, poolId))
+  {
+    LOG::LogF(LOGERROR, "Cannot decrypt data, the pool id %u dont exist", poolId);
+    return AP4_ERROR_INVALID_PARAMETERS;
+  }
+
+  PINFO& pInfo = m_pool[poolId];
+  auto& decrypter = pInfo.decrypter;
+
+  if (!decrypter || pInfo.isChanged)
+  {
+    const auto& fInfo = pInfo.fInfo;
+
+    if (!STRING::KeyExists(m_kidPairs, fInfo.kid))
+    {
+      // In theory when there is a license server url, could be possible to request new KID/KEY pair
+      // making a new HTTP license request e.g. the case of key rotation, but it needs to be tested properly
+      LOG::LogF(LOGERROR, "Cannot decrypt data, due to missing KID/KEY from the license data");
+      return AP4_ERROR_INVALID_STATE;
+    }
+
+    AP4_CencSingleSampleDecrypter* pDecrypter{nullptr};
+    const std::vector<uint8_t>& key = m_kidPairs[fInfo.kid];
+
+    AP4_UI32 cypherType{AP4_CENC_CIPHER_NONE};
+    bool resetIvEachSubsample{false};
+
+    if (fInfo.cryptoInfo.m_mode == CryptoMode::AES_CTR)
+    {
+      cypherType = AP4_CENC_CIPHER_AES_128_CTR;
+    }
+    else if (fInfo.cryptoInfo.m_mode == CryptoMode::AES_CBC)
+    {
+      cypherType = AP4_CENC_CIPHER_AES_128_CBC;
+      // CBCS reset the IV at each subsample, see https://github.com/axiomatic-systems/Bento4/commit/ab07e3acc7befc821554bc5e271df1201681e954
+      resetIvEachSubsample = true;
+    }
+
+    AP4_CencSingleSampleDecrypter::Create(
+        cypherType, key.data(), static_cast<AP4_Size>(key.size()), fInfo.cryptoInfo.m_cryptBlocks,
+        fInfo.cryptoInfo.m_skipBlocks, nullptr, resetIvEachSubsample, pDecrypter);
+
+    decrypter = std::unique_ptr<AP4_CencSingleSampleDecrypter>{std::exchange(pDecrypter, nullptr)};
+  }
+
+  return decrypter->DecryptSampleData(dataIn, dataOut, iv, subsampleCount, bytesOfCleartextData,
+                                      bytesOfEncryptedData);
 }
 
 std::string CClearKeyCencSingleSampleDecrypter::CreateLicenseRequest(
@@ -178,32 +214,66 @@ std::string CClearKeyCencSingleSampleDecrypter::CreateLicenseRequest(
    * { "kids":
    *     [
    *         "nrQFDeRLSAKTLifXUIPiZg"
-   *     ]
+   *     ],
    * "type":"temporary" }
    */
 
   std::string b64Kid = BASE64::UrlSafeEncode(BASE64::Encode(defaultKeyId, false));
 
-  rapidjson::Document jDoc;
-  jDoc.SetObject();
-  auto& allocator = jDoc.GetAllocator();
-
-  rapidjson::Value kids{rapidjson::kArrayType};
-  rapidjson::Value jKid;
-
-  jKid.SetString(b64Kid.c_str(), allocator);
-  kids.PushBack(jKid, allocator);
-
-  jDoc.AddMember("kids", kids, allocator);
-  jDoc.AddMember("type", "temporary", allocator);
-
-  rapidjson::StringBuffer buffer;
-  rapidjson::Writer<rapidjson::StringBuffer> writer{buffer};
-  jDoc.Accept(writer);
-  return buffer.GetString();
+  njson jData;
+  jData["kids"] = njson::array({b64Kid});
+  jData["type"] = "temporary";
+  return jData.dump(-1, ' ', false, njson::error_handler_t::ignore);
 }
 
-bool CClearKeyCencSingleSampleDecrypter::ParseLicenseResponse(std::string data)
+bool CClearKeyCencSingleSampleDecrypter::MakeLicenseRequest(
+    const std::string& url,
+    const std::map<std::string, std::string>& headers,
+    const std::vector<uint8_t>& kid,
+    std::vector<uint8_t>& licenseData)
+{
+  const std::string postData = CreateLicenseRequest(kid);
+
+  if (CSrvBroker::GetSettings().IsDebugLicense())
+  {
+    const std::string debugFilePath =
+        FILESYS::PathCombine(m_host->GetLibraryPath(), "ClearKey.init");
+    FILESYS::SaveFile(debugFilePath, postData.c_str(), true);
+  }
+
+  CURL::CUrl curl{url, postData};
+  curl.AddHeader("Accept", "application/json");
+  curl.AddHeader("Content-Type", "application/json");
+  curl.AddHeaders(headers);
+
+  int statusCode = curl.Open();
+  if (statusCode == -1 || statusCode >= 400)
+  {
+    LOG::Log(LOGERROR, "License server returned failure (HTTP error %i)", statusCode);
+    return false;
+  }
+
+  std::string responseData;
+
+  if (curl.Read(responseData) != CURL::ReadStatus::IS_EOF)
+  {
+    LOG::LogF(LOGERROR, "Could not read the license server response");
+    return false;
+  }
+
+  if (CSrvBroker::GetSettings().IsDebugLicense())
+  {
+    const std::string debugFilePath =
+        FILESYS::PathCombine(m_host->GetLibraryPath(), "ClearKey.response");
+    FILESYS::SaveFile(debugFilePath, responseData, true);
+  }
+
+  licenseData.assign(responseData.begin(), responseData.end());
+
+  return true;
+}
+
+bool CClearKeyCencSingleSampleDecrypter::ParseLicenseResponse(const std::vector<uint8_t>& data)
 {
   /* Expected JSON structure for license response:
    * { "keys": [
@@ -211,63 +281,70 @@ bool CClearKeyCencSingleSampleDecrypter::ParseLicenseResponse(std::string data)
    *         "k": "FmY0xnWCPCNaSpRG-tUuTQ",
    *         "kid": "nrQFDeRLSAKTLifXUIPiZg",
    *         "kty": "oct"
-   *     }
+   *     }],
    * "type": "temporary"}
    */
-
-  rapidjson::Document jDoc;
-  jDoc.Parse(data.c_str(), data.size());
-
-  if (!jDoc.IsObject())
+  const njson jData = njson::parse(data, nullptr, false);
+  if (jData.is_discarded() || !jData.is_object())
   {
     LOG::LogF(LOGERROR, "Malformed JSON data in license response");
     return false;
   }
 
-  for (auto& jChildObj : jDoc.GetObject())
+  if (jData.contains("Message") && jData["Message"].is_string())
   {
+    LOG::LogF(LOGERROR, "Error in license response: %s",
+              jData["Message"].get<std::string>().c_str());
+    return false;
+  }
+  if (!jData.contains("keys") || !jData["keys"].is_array() || jData["keys"].empty())
+  {
+    LOG::LogF(LOGERROR, "No keys in license response");
+    return false;
+  }
+
+  for (const auto& jwkValue : jData["keys"]) // Iterate array
+  {
+    if (!jwkValue.is_object())
+    {
+      LOG::LogF(LOGERROR, "Unexpected JSON format in the license response");
+      continue;
+    }
+
+    if (jwkValue.contains("kty") && jwkValue["kty"].is_string() &&
+        jwkValue["kty"].get<std::string>() != "oct")
+    {
+      LOG::LogF(LOGWARNING, "Ignored JWK set, due to unsupported \"%s\" key type",
+                jwkValue["kty"].get<std::string>().c_str());
+      continue;
+    }
+
     std::string b64Key;
     std::string b64KeyId;
-    const std::string keyName = jChildObj.name.GetString();
-    rapidjson::Value& jDictVal = jChildObj.value;
 
-    if (keyName == "Message" && jDictVal.IsString())
+    if (jwkValue.contains("k") && jwkValue["k"].is_string())
+      b64Key = jwkValue["k"].get<std::string>();
+
+    if (jwkValue.contains("kid") && jwkValue["kid"].is_string())
+      b64KeyId = jwkValue["kid"].get<std::string>();
+
+    b64Key = BASE64::UrlSafeDecode(b64Key);
+    BASE64::AddPadding(b64Key);
+
+    b64KeyId = BASE64::UrlSafeDecode(b64KeyId);
+    BASE64::AddPadding(b64KeyId);
+
+    const std::vector<uint8_t> kidBytes = BASE64::Decode(b64KeyId);
+    const std::vector<uint8_t> keyBytes = BASE64::Decode(b64Key);
+
+    if (kidBytes.empty() || keyBytes.empty())
     {
-      LOG::LogF(LOGERROR, "Error in license response: %s", jDictVal.GetString());
-      return false;
+      LOG::LogF(LOGERROR, "Malformed key pair value in the license response");
+      continue;
     }
 
-    if (!jDoc.HasMember("keys"))
-    {
-      LOG::LogF(LOGERROR, "No keys in license response");
-      return false;
-    }
-
-    if (keyName == "keys" && jDictVal.IsArray())
-    {
-      for (auto const& jArrayKey : jDictVal.GetArray())
-      {
-        if (jArrayKey.IsObject())
-        {
-          if (jArrayKey.HasMember("k") && jArrayKey["k"].IsString())
-            b64Key = jArrayKey["k"].GetString();
-
-          if (jArrayKey.HasMember("kid") && jArrayKey["kid"].IsString())
-            b64KeyId = jArrayKey["kid"].GetString();
-        }
-
-        if (!b64Key.empty() && !b64KeyId.empty())
-        {
-          b64Key = BASE64::UrlSafeDecode(b64Key);
-          BASE64::AddPadding(b64Key);
-
-          b64KeyId = BASE64::UrlSafeDecode(b64KeyId);
-          BASE64::AddPadding(b64KeyId);
-
-          m_keyPairs.emplace(b64KeyId, b64Key);
-        }
-      }
-    }
+    m_kidPairs.insert_or_assign(kidBytes, keyBytes);
   }
+
   return true;
 }

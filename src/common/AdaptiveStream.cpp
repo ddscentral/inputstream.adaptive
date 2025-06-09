@@ -15,8 +15,7 @@
 #include "Chooser.h"
 #include "CompKodiProps.h"
 #include "SrvBroker.h"
-#include "kodi/tools/StringUtils.h"
-#include "oscompat.h"
+#include "utils/StringUtils.h"
 #include "utils/CurlUtils.h"
 #include "utils/UrlUtils.h"
 #include "utils/log.h"
@@ -32,7 +31,6 @@
 
 using namespace adaptive;
 using namespace std::chrono_literals;
-using namespace kodi::tools;
 using namespace PLAYLIST;
 using namespace UTILS;
 
@@ -41,18 +39,11 @@ uint32_t AdaptiveStream::globalClsId = 0;
 AdaptiveStream::AdaptiveStream(AdaptiveTree* tree,
                                PLAYLIST::CAdaptationSet* adp,
                                PLAYLIST::CRepresentation* initialRepr)
-  : thread_data_(nullptr),
-    m_tree(tree),
-    observer_(nullptr),
+  : m_tree(tree),
     current_period_(m_tree->m_currentPeriod),
     current_adp_(adp),
     current_rep_(initialRepr),
-    segment_read_pos_(0),
-    currentPTSOffset_(0),
-    absolutePTSOffset_(0),
-    lastUpdated_(std::chrono::system_clock::now()),
-    m_fixateInitialization(false),
-    m_segmentFileOffset(0)
+    lastUpdated_(std::chrono::system_clock::now())
 {
   auto& kodiProps = CSrvBroker::GetKodiProps();
   m_streamParams = kodiProps.GetStreamParams();
@@ -276,12 +267,12 @@ bool AdaptiveStream::PrepareDownload(const PLAYLIST::CRepresentation* rep,
 
     if (seg.range_end_ != NO_VALUE)
     {
-      rangeHeader = StringUtils::Format("bytes=%llu-%llu", seg.range_begin_ + fileOffset,
-                                        seg.range_end_ + fileOffset);
+      rangeHeader = STRING::Format("bytes=%llu-%llu", seg.range_begin_ + fileOffset,
+                                   seg.range_end_ + fileOffset);
     }
     else
     {
-      rangeHeader = StringUtils::Format("bytes=%llu-", seg.range_begin_ + fileOffset);
+      rangeHeader = STRING::Format("bytes=%llu-", seg.range_begin_ + fileOffset);
     }
 
     downloadInfo.m_addHeaders["Range"] = rangeHeader;
@@ -451,8 +442,6 @@ bool AdaptiveStream::parseIndexRange(PLAYLIST::CRepresentation* rep,
   LOG::Log(LOGDEBUG, "[AS-%u] Build segments from SIDX atom...", clsId);
   AP4_MemoryByteStream byteStream{reinterpret_cast<const AP4_Byte*>(buffer.data()),
                                   static_cast<AP4_Size>(buffer.size())};
-
-  CAdaptationSet* adpSet = getAdaptationSet();
 
   if (rep->GetContainerType() == ContainerType::WEBM)
   {
@@ -676,7 +665,9 @@ bool AdaptiveStream::start_stream(const uint64_t startPts)
       //! @todo: This code does not consider that the live delay could cause the startup segment to be selected
       //! in the previous period when the current period has too few segments
       //! more likely live delay management should be moved just after manifest parsing and before period init
-      for (auto itSeg = current_rep_->Timeline().rbegin(); itSeg != current_rep_->Timeline().rend();
+      auto timelineItRend = current_rep_->Timeline().rend();
+
+      for (auto itSeg = current_rep_->Timeline().rbegin(); itSeg != timelineItRend;
            ++itSeg)
       {
         // Implicit rounding down because managing PTS milliseconds negatively affects segment selection
@@ -685,10 +676,13 @@ bool AdaptiveStream::start_stream(const uint64_t startPts)
         // we may fall too close to the live edge to get new segments from manifest update
         if (totalDurSecs > liveDelaySecs)
         {
-          // current_segment_ expects the previous segment as a reference to find the next segment (this one)
-          if (itSeg != current_rep_->Timeline().rend())
-            current_rep_->current_segment_ = &*(++itSeg);
-
+          if (itSeg != timelineItRend)
+          {
+            // GetNextSegment used below requires the previous one, then advance
+            ++itSeg;
+            if (itSeg != timelineItRend)
+              current_rep_->current_segment_ = &(*itSeg);
+          }
           break;
         }
       }

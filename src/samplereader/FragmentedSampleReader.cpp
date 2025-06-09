@@ -373,7 +373,8 @@ AP4_Result CFragmentedSampleReader::ProcessMoof(AP4_ContainerAtom* moof,
               extradata,
               (m_decrypterCaps.flags & DRM::DecrypterCapabilites::SSD_ANNEXB_REQUIRED) != 0))
       {
-        m_codecHandler->m_extraData.SetData(extradata.data(), extradata.size());
+        m_codecHandler->m_extraData.SetData(extradata.data(),
+                                            static_cast<AP4_Size>(extradata.size()));
       }
     }
 
@@ -466,9 +467,12 @@ AP4_Result CFragmentedSampleReader::ProcessMoof(AP4_ContainerAtom* moof,
 SUCCESS:
   if (m_singleSampleDecryptor && m_codecHandler)
   {
-     m_singleSampleDecryptor->SetFragmentInfo(
-        m_poolId, m_defaultKey, m_codecHandler->m_naluLengthSize, m_codecHandler->m_extraData,
-        m_decrypterCaps.flags, m_readerCryptoInfo);
+    if (AP4_FAILED(m_singleSampleDecryptor->SetFragmentInfo(
+            m_poolId, m_defaultKey, m_codecHandler->m_naluLengthSize, m_codecHandler->m_extraData,
+            m_decrypterCaps.flags, m_readerCryptoInfo)))
+    {
+      return AP4_ERROR_INVALID_FORMAT;
+    }
   }
   return AP4_SUCCESS;
 }
@@ -558,7 +562,7 @@ void CFragmentedSampleReader::ParseTrafTfrf(AP4_UuidAtom* uuidAtom)
     return;
   }
   uint8_t version = parser.ReadNextUnsignedChar();
-  uint32_t flags = parser.ReadNextUnsignedInt24();
+  [[maybe_unused]] uint32_t flags = parser.ReadNextUnsignedInt24();
   uint8_t fragmentCount = parser.ReadNextUnsignedChar();
 
   for (uint8_t index = 0; index < fragmentCount; index++)

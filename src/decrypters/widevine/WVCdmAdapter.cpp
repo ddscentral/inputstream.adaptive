@@ -14,9 +14,8 @@
 #include "cdm/debug.h"
 #include "decrypters/Helpers.h"
 #include "utils/FileUtils.h"
+#include "utils/GUIUtils.h"
 #include "utils/log.h"
-
-#include <kodi/Filesystem.h>
 
 using namespace UTILS;
 
@@ -55,15 +54,30 @@ void DebugLog(const CDM_DBG::LogLevel level, const char* msg)
 }
 } // unnamed namespace
 
-CWVCdmAdapter::CWVCdmAdapter(const DRM::Config& config, CWVDecrypter* host)
-  : m_config(config), m_host(host)
+CWVCdmAdapter::CWVCdmAdapter()
 {
   CDM_DBG::SetDBGMsgCallback(DebugLog);
+}
+
+CWVCdmAdapter::~CWVCdmAdapter()
+{
+  if (m_cdmAdapter)
+  {
+    m_cdmAdapter->RemoveClient();
+    // LOG::LogF(LOGDEBUG, "CDM Adapter instances: %u", m_cdmAdapter.use_count());
+    m_cdmAdapter = nullptr;
+  }
+}
+
+SResult CWVCdmAdapter::Initialize(const DRM::Config& config, CWVDecrypter* host)
+{
+  m_config = config;
+  m_host = host;
 
   if (m_host->GetLibraryPath().empty())
   {
     LOG::LogF(LOGERROR, "Widevine CDM library path not specified");
-    return;
+    return SResultCode::ERROR;
   }
   std::string cdmPath = FILESYS::PathCombine(m_host->GetLibraryPath(), LIBRARY_FILENAME);
 
@@ -80,36 +94,31 @@ CWVCdmAdapter::CWVCdmAdapter(const DRM::Config& config, CWVDecrypter* host)
   basePath = FILESYS::PathCombine(basePath, DRM::GenerateUrlDomainHash(licUrl));
   basePath += FILESYS::SEPARATOR;
 
-  m_cdmAdapter =
+  auto cdmAdapter =
       std::make_shared<media::CdmAdapter>("com.widevine.alpha", cdmPath, basePath,
                                           media::CdmConfig(false, m_config.isPersistentStorage),
                                           dynamic_cast<media::CdmAdapterClient*>(this));
 
-  if (!m_cdmAdapter->valid())
+  if (!cdmAdapter->LoadCDM())
   {
     LOG::Log(LOGERROR, "Unable to load widevine shared library (%s)", cdmPath.c_str());
-    m_cdmAdapter = nullptr;
-    return;
+    return SResult::Error(GUI::GetLocalizedString(30304));
   }
+
+  if (!cdmAdapter->Initialize())
+    return SResult::Error(GUI::GetLocalizedString(30305));
 
   const std::vector<uint8_t>& cert = m_config.license.serverCert;
   if (!cert.empty())
   {
-    m_cdmAdapter->SetServerCertificate(0, cert.data(), cert.size());
+    cdmAdapter->SetServerCertificate(0, cert.data(), static_cast<uint32_t>(cert.size()));
   }
 
-  // m_cdmAdapter->GetStatusForPolicy();
-  // m_cdmAdapter->QueryOutputProtectionStatus();
-}
+  // cdmAdapter->GetStatusForPolicy();
+  // cdmAdapter->QueryOutputProtectionStatus();
 
-CWVCdmAdapter::~CWVCdmAdapter()
-{
-  if (m_cdmAdapter)
-  {
-    m_cdmAdapter->RemoveClient();
-    // LOG::LogF(LOGDEBUG, "CDM Adapter instances: %u", m_cdmAdapter.use_count());
-    m_cdmAdapter = nullptr;
-  }
+  m_cdmAdapter = cdmAdapter;
+  return SResultCode::OK;
 }
 
 void CWVCdmAdapter::OnCDMMessage(const char* session,

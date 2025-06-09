@@ -13,6 +13,7 @@
 #include "common/AdaptiveTree.h"
 #include "decrypters/DrmEngine.h"
 #include "decrypters/IDecrypter.h"
+#include "utils/ResultType.h"
 
 #if defined(ANDROID)
 #include <kodi/platform/android/System.h>
@@ -36,7 +37,7 @@ public:
    *  \param manifestUrl The manifest URL
    *  \return True if has success, false otherwise
    */
-  bool Initialize(std::string manifestUrl);
+  SResult Initialize(std::string manifestUrl);
 
   bool CheckPlayableStreams(PLAYLIST::CPeriod* period);
 
@@ -169,12 +170,6 @@ public:
    *  \return A 32 uint with bits set of 'included' streams
    */
   uint32_t GetIncludedStreamMask() const;
-
-
-  /*! \brief Get the type crypto key system in use
-   *  \return enum of crypto key system
-   */
-  STREAM_CRYPTO_KEY_SYSTEM GetCryptoKeySystem(std::string_view keySystem) const;
 
   /*! \brief Check if there is an initial discontinuity sequence number
    *  \return True if there is an initial discontinuity sequence number

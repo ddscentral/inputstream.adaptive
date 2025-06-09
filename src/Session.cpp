@@ -19,8 +19,8 @@
 #include "decrypters/DrmFactory.h"
 #include "decrypters/Helpers.h"
 #include "samplereader/SampleReaderFactory.h"
-#include "utils/Base64Utils.h"
 #include "utils/CurlUtils.h"
+#include "utils/GUIUtils.h"
 #include "utils/StringUtils.h"
 #include "utils/UrlUtils.h"
 #include "utils/Utils.h"
@@ -59,7 +59,7 @@ void SESSION::CSession::DeleteStreams()
 |   initialize
 +---------------------------------------------------------------------*/
 
-bool SESSION::CSession::Initialize(std::string manifestUrl)
+SResult SESSION::CSession::Initialize(std::string manifestUrl)
 {
   m_reprChooser = CHOOSER::CreateRepresentationChooser();
 
@@ -100,7 +100,7 @@ bool SESSION::CSession::Initialize(std::string manifestUrl)
 
   CURL::HTTPResponse manifestResp;
   if (!CURL::DownloadFile(manifestUrl, manifestHeaders, {"etag", "last-modified"}, manifestResp))
-    return false;
+    return SResult::Error(GUI::GetLocalizedString(30307));
 
   // The download speed with small file sizes is not accurate, we should download at least 512Kb
   // to have a sufficient acceptable value to calculate the bandwidth,
@@ -115,14 +115,17 @@ bool SESSION::CSession::Initialize(std::string manifestUrl)
 
   m_adaptiveTree = PLAYLIST_FACTORY::CreateAdaptiveTree(manifestResp);
   if (!m_adaptiveTree)
-    return false;
+  {
+    LOG::LogF(LOGERROR, "Unable to determine type of manifest file.");
+    return SResult::Error(GUI::GetLocalizedString(30308));
+  }
 
   m_adaptiveTree->Configure(m_reprChooser, kodiProps.GetManifestUpdParams());
 
   if (!m_adaptiveTree->Open(manifestResp.effectiveUrl, manifestResp.headers, manifestResp.data))
   {
-    LOG::Log(LOGERROR, "Cannot parse the manifest (%s)", manifestUrl.c_str());
-    return false;
+    LOG::LogF(LOGERROR, "Cannot parse the manifest file.");
+    return SResult::Error(GUI::GetLocalizedString(30308));
   }
 
   m_adaptiveTree->PostOpen();
@@ -132,7 +135,7 @@ bool SESSION::CSession::Initialize(std::string manifestUrl)
 
   InitializePeriod();
 
-  return true;
+  return SResultCode::OK;
 }
 
 bool SESSION::CSession::CheckPlayableStreams(PLAYLIST::CPeriod* period)
@@ -346,6 +349,13 @@ void SESSION::CSession::InitializePeriod()
 
       AddStream(adp.get(), defaultRepr, isDefaultAdpSet, uniqueId, audioLanguageOrig);
     }
+  }
+
+  if (m_streams.empty())
+  {
+    LOG::LogF(LOGERROR,
+              "No stream can be played, common causes: resolution limits or HDCP problem");
+    GUI::ErrorDialog(GUI::GetLocalizedString(30309));
   }
 }
 
@@ -798,7 +808,7 @@ bool SESSION::CSession::GetNextSample(ISampleReader*& sampleReader)
     {
       // Advice is that VP does not want to wait longer than 10ms for a return from
       // DemuxRead() - here we ask to not wait at all and if ReadSample has not yet
-      // finished we return the dummy reader instead
+      // finished will return "true" to feed an empty packet
       if (streamReader->IsReadSampleAsyncWorking())
       {
         waiting = stream.get();
@@ -1069,20 +1079,6 @@ uint32_t SESSION::CSession::GetIncludedStreamMask() const
   return res;
 }
 
-STREAM_CRYPTO_KEY_SYSTEM SESSION::CSession::GetCryptoKeySystem(std::string_view keySystem) const
-{
-  if (keySystem == DRM::KS_WIDEVINE)
-    return STREAM_CRYPTO_KEY_SYSTEM_WIDEVINE;
-  else if (keySystem == DRM::KS_WISEPLAY)
-    return STREAM_CRYPTO_KEY_SYSTEM_WISEPLAY;
-  else if (keySystem == DRM::KS_PLAYREADY)
-    return STREAM_CRYPTO_KEY_SYSTEM_PLAYREADY;
-  else if (keySystem == DRM::KS_CLEARKEY)
-    return STREAM_CRYPTO_KEY_SYSTEM_CLEARKEY;
-  else
-    return STREAM_CRYPTO_KEY_SYSTEM_NONE;
-}
-
 int CSession::GetChapter() const
 {
   if (m_adaptiveTree)
@@ -1198,11 +1194,11 @@ PLAYLIST::CAdaptationSet* SESSION::CSession::DetermineDefaultAdpSet(PLAYLIST::CP
   //! @todo: this is a rough first implementation that have a fixed codec priority order,
   //! and only for video streams. In the future it should be improved
   //! for example check if hardware have capabilities and made it customizable,
-  //! since low-end devices may prefer older codecs such as H264 since they
-  //! do not require high-performance hardware to process the decoding.
+  //! since low-end devices may prefer older codecs such as H264 as they may
+  //! not have high-performance hardware to process the decoding.
   //! The current sorting is intended just to limit bandwidth consumption
   //! by prioritizing video codecs with high efficiency
-  const std::vector<std::string> videoCodecOrder = {
+  static const std::vector<std::string> videoCodecOrder = {
       CODEC::FOURCC_DVHE, CODEC::FOURCC_HEV1, CODEC::FOURCC_DVH1, CODEC::FOURCC_HVC1,
       CODEC::FOURCC_HEVC, CODEC::FOURCC_AV01, CODEC::NAME_AV1,    CODEC::FOURCC_VP09,
       CODEC::NAME_VP9,    CODEC::FOURCC_AVC_, CODEC::FOURCC_H264};

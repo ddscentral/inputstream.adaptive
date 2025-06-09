@@ -12,11 +12,11 @@
 #include "decrypters/Helpers.h"
 #include "utils/log.h"
 
-bool CClearKeyDecrypter::OpenDRMSystem(const DRM::Config& config)
+SResult CClearKeyDecrypter::OpenDRMSystem(const DRM::Config& config)
 {
   m_config = config;
   m_isInitialized = true;
-  return true;
+  return SResultCode::OK;
 }
 
 std::shared_ptr<Adaptive_CencSingleSampleDecrypter> CClearKeyDecrypter::CreateSingleSampleDecrypter(
@@ -26,9 +26,10 @@ std::shared_ptr<Adaptive_CencSingleSampleDecrypter> CClearKeyDecrypter::CreateSi
     bool skipSessionMessage,
     CryptoMode cryptoMode)
 {
-  if (cryptoMode != CryptoMode::AES_CTR)
+  if (cryptoMode != CryptoMode::AES_CTR && cryptoMode != CryptoMode::AES_CBC)
   {
-    LOG::LogF(LOGERROR, "Cannot initialize ClearKey DRM. Only \"cenc\" encryption supported.");
+    LOG::LogF(LOGERROR,
+              "Cannot initialize ClearKey DRM. Only \"cenc\" and \"cbcs\" encryption supported.");
     return nullptr;
   }
 

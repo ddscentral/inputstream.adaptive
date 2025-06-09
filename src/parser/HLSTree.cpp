@@ -13,7 +13,6 @@
 #include "aes_decrypter.h"
 #include "decrypters/HelperPr.h"
 #include "decrypters/Helpers.h"
-#include "kodi/tools/StringUtils.h"
 #include "utils/Base64Utils.h"
 #include "utils/StringUtils.h"
 #include "utils/UrlUtils.h"
@@ -27,7 +26,6 @@
 
 using namespace PLAYLIST;
 using namespace UTILS;
-using namespace kodi::tools;
 
 namespace
 {
@@ -72,12 +70,10 @@ std::map<std::string, std::string> ParseTagAttributes(const std::string& tagValu
         ++inValue;
     }
 
-    std::string attribName = tagValue.substr(offset, value - offset);
-    StringUtils::TrimRight(attribName);
+    std::string attribName = STRING::TrimRight(tagValue.substr(offset, value - offset));
 
     std::string attribValue =
-        tagValue.substr(value + (inValue ? 2 : 1), end - value - (inValue ? 3 : 1));
-    StringUtils::Trim(attribValue);
+        STRING::Trim(tagValue.substr(value + (inValue ? 2 : 1), end - value - (inValue ? 3 : 1)));
 
     tagAttribs[attribName] = attribValue;
     offset = end + 1;
@@ -361,37 +357,32 @@ void adaptive::CHLSTree::FixDiscSequence(std::stringstream& streamData, uint32_t
       // can fit one of the existing ones, otherwise fallback to the last one.
       // With a malformed manifest update this could cause any kind of playback oddities,
       // such as segments played multiple times, or periods switched before the end of their playback.
-      for (auto& period : m_periods)
+      for (auto itPeriod = m_periods.begin(); itPeriod != m_periods.end(); ++itPeriod)
       {
-        for (auto itPeriod = m_periods.begin(); itPeriod != m_periods.end(); ++itPeriod)
+        if ((*itPeriod)->GetStart() == NO_VALUE)
+          continue;
+
+        auto nextPeriod = itPeriod + 1;
+
+        if (nextPeriod != m_periods.end())
         {
-          if ((*itPeriod)->GetStart() == NO_VALUE)
-            continue;
-
-          auto nextPeriod = itPeriod + 1;
-
-          if (nextPeriod != m_periods.end())
+          if ((*itPeriod)->GetStart() <= periodsStartTime[0] &&
+              (*itPeriod)->GetStart() < periodsEndTime[0] &&
+              (*nextPeriod)->GetStart() >= periodsEndTime[0])
           {
-            if ((*itPeriod)->GetStart() <= periodsStartTime[0] &&
-                (*itPeriod)->GetStart() < periodsEndTime[0] &&
-                (*nextPeriod)->GetStart() >= periodsEndTime[0])
-            {
-              discSeqNumberFix = (*itPeriod)->GetSequence();
-              isDiscFound = true;
-              break;
-            }
-          }
-          else
-          {
-            if ((*itPeriod)->GetStart() <= periodsStartTime[0])
-            {
-              discSeqNumberFix = (*itPeriod)->GetSequence();
-              isDiscFound = true;
-            }
+            discSeqNumberFix = (*itPeriod)->GetSequence();
+            isDiscFound = true;
+            break;
           }
         }
-        if (isDiscFound)
-          break;
+        else
+        {
+          if ((*itPeriod)->GetStart() <= periodsStartTime[0])
+          {
+            discSeqNumberFix = (*itPeriod)->GetSequence();
+            isDiscFound = true;
+          }
+        }
       }
     }
   }
@@ -468,17 +459,12 @@ bool adaptive::CHLSTree::ProcessChildManifest(PLAYLIST::CPeriod* period,
 
   rep->SetBaseUrl(sourceUrl);
 
-  EncryptionType currentEncryptionType = EncryptionType::NONE;
-
   // To know in advance if EXT-X-PROGRAM-DATE-TIME is available
   bool hasProgramDateTime = STRING::Contains(data, "#EXT-X-PROGRAM-DATE-TIME:");
   bool hasEndList{false}; // Determine if there is the EXT-X-ENDLIST tag
 
   uint64_t programDateTime{NO_VALUE}; // EXT-X-PROGRAM-DATE-TIME in ms or NO_VALUE
   uint64_t currentSegNumber{0};
-
-  uint64_t lastSegNumber{SEGMENT_NO_NUMBER}; // The segment number of last segment in the previous manifest
-  uint64_t lastSegStartPts{NO_PTS_VALUE}; // The start PTS of last segment in the previous manifest
 
   uint64_t mediaSequenceNbr{0};
 

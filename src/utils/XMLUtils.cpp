@@ -10,7 +10,6 @@
 
 #include "oscompat.h" // _mkgmtime
 #include "StringUtils.h"
-#include "kodi/tools/StringUtils.h"
 #include "log.h"
 #include "pugixml.hpp"
 
@@ -18,7 +17,6 @@
 #include <regex>
 
 using namespace UTILS::XML;
-using namespace kodi::tools;
 using namespace pugi;
 
 namespace
@@ -99,7 +97,7 @@ double UTILS::XML::ParseDuration(std::string_view durationStr)
 size_t UTILS::XML::CountChilds(pugi::xml_node node, const char* childTagName /* = "" */)
 {
   size_t count{0};
-  for (xml_node nodeChild : node.children(childTagName))
+  for ([[maybe_unused]] xml_node nodeChild : node.children(childTagName))
   {
     count++;
   }
